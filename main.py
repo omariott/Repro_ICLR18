@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch as t
 import torch.nn as nn
-from torch.autograd import Function as F
+import torch.nn.functional as F
 from torch.autograd import Variable
 import _pickle as pickle
 import os.path
@@ -41,9 +41,8 @@ def read_data(fname):
 
 def computeAccuracy(pred, y):
     _, predInd = t.max(pred, 1)
-    _, trueInd = t.max(y, 1)
-    correctPredictions = t.sum(predInd == trueInd)
-    return correctPredictions / float(len(y))
+    correctPredictions = t.sum(predInd == y)
+    return (correctPredictions.data[0] / y.shape[0])
 
 #load data from given files and save it as tensors to speed up next executions
 def load_data(trainDataFile,testDataFile):
@@ -74,60 +73,57 @@ def oneHot(x, nbClass):
     xOneHot[np.arange(len(x)), x] = 1
     return xOneHot
 '''
-'''
-def evaluation(model,N,Xeval,Yeval):
-    loss = 0
+
+def evaluation(x_eval,y_eval):
     acc = 0
-    #Nbatch = 2048
-    for k in range(N // Nbatch):
-        
-        indsBatch = range(k * Nbatch, (k+1) * Nbatch)
-        X = Variable(Xeval[indsBatch, :], requires_grad=False)
-        Y = Variable(Yeval[indsBatch, :], requires_grad=False)
-        
-        X,Y = X.cuda(), Y.cuda()
-        
-        Ytil = model(X)
-        _, Y_not_onehot = Y.max(1)
-        l, a = loss_accuracy(Ytil, Y_not_onehot, Y)
-        loss += l
-        acc += a
-        #print acc
-    return loss.cpu().data.numpy() / float(k+1), acc.cpu().data.numpy() / float(k+1)
-'''
+    l = 0
+    nb_iter = x_eval.shape[0]//2048
+    for k in range(nb_iter):
+        #load batch
+        indsBatch = range(k * batch_size, (k+1) * batch_size)
+        x = Variable(x_eval[indsBatch, :], requires_grad=False)
+        y = Variable(y_eval[indsBatch], requires_grad=False) 
+        if cuda: x,y = x.cuda(), y.cuda()
+
+        y_til = model(x)
+        eval_loss = loss(y_til,y)
+
+        acc += computeAccuracy(F.log_softmax(y_til),y)
+        l += eval_loss.data[0]
+    return l/nb_iter,acc/nb_iter
+
 if __name__ == '__main__':
     trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
     testDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_test.amat"
 
     print('loading data...',end='',flush=True)
     x_train,y_train,x_test,y_test = load_data(trainDataFile, testDataFile)
-    
-    #shuffle train and test data
     print('done',flush=True)
-    print(y_train.shape)
-    print(y_test.shape)
-    print(x_train.shape)
-    print(x_train.shape)
 
     #hyperparameters
-    learning_rate = 0.05
+    learning_rate = 0.001
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 2
+    epochs_nb = 30
     cuda = True
-    #graph_step = batch_size * 100
-
     #WARNING - Task specific
     input_dim = 784
     output_dim = 10
 
+    #shuffle train and test data
+    perm = t.randperm(train_size)
+    x_train = x_train[perm]
+    y_train = y_train[perm]
+    
+
+
     #Baseline DNN settings, according to paper
     model = model = nn.Sequential(
-          nn.Linear(input_dim,312),
+          nn.Linear(input_dim,500),
           nn.ReLU(),
-          nn.Linear(312,128),
+          nn.Linear(500,500),
           nn.ReLU(),
-          nn.Linear(128,10),
+          nn.Linear(500,10),
         )
     loss = nn.CrossEntropyLoss()
 
@@ -138,15 +134,15 @@ if __name__ == '__main__':
     optim = t.optim.SGD(model.parameters(), lr=learning_rate)
 
     #book keeping
-    nbBatchTotal = 0
     train_losses = []
-    train_acc = []
+    train_accuracies = []
     test_losses = []
-    test_acc = []
+    test_accuracies = []
 
-    #training
+    #training of model
     for e in range(epochs_nb):
-        for i in range(train_size // batch_size):
+        print('epoch '+str(e))
+        for i in range(train_size // batch_size):  
             #load batch
             indsBatch = range(i * batch_size, (i+1) * batch_size)
             x = Variable(x_train[indsBatch, :], requires_grad=False)
@@ -157,28 +153,28 @@ if __name__ == '__main__':
             y_til = model(x)
             #loss and backward
             l = loss(y_til,y)
-            train_losses.append(l.data[0])
             optim.zero_grad()
             l.backward()
             optim.step()
 
-        plt.plot(train_losses)
-        plt.xlabel('nb mini-batch updates')
-        plt.ylabel('loss')
-        plt.show(block=False)
 
-    '''   
-    plt.plot([j*batch_size for j in xrange(nbBatchTotal + nbEpochs)], lossData)
-    plt.ylabel('evolution of Loss during training')
-    plt.xlabel('training iteration number')
-    plt.savefig('plots/lossMNIST_rot_im_lr0_05__4epochs.png')
-    plt.show()
-    plt.plot([j*batch_size for j in xrange(nbBatchTotal + nbEpochs)], accuracy)
-    plt.plot([j*graphic_step for j in range(1, len(testAccuracy)+1)],testAccuracy)
-    plt.xlabel('training iteration number')
+        #evaluation of current model
+        train_l,train_acc = evaluation(x_train,y_train)
+        test_l,test_acc = evaluation(x_test,y_test)
+
+        train_losses.append(train_l)
+        train_accuracies.append(train_acc)
+        test_losses.append(test_l)
+        test_accuracies.append(test_acc)
+
+    plt.figure()
+    plt.plot(train_losses)
+    plt.plot(test_losses)
+    plt.legend(['train loss', 'test loss'], loc='lower right')
+
+    plt.figure()
+    plt.plot(train_accuracies)
+    plt.plot(test_accuracies)
     plt.legend(['train accuracy', 'test accuracy'], loc='lower right')
-    plt.savefig('plots/accuracyMNIST_rot_im_lr0_05__4epochs.png')
-    plt.ylabel('evolution of accuracy during training')
+
     plt.show()
-    print 'max accuracy on test set: ' + str(max(testAccuracy))
-    '''
