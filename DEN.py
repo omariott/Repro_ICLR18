@@ -14,34 +14,50 @@ class DEN(nn.module):
             return x
 
 
-def selective_retrain(DEN):
-    """
-    Retrain output layer
-    """
-    layer = depth-1
-    #Solving for output layer
-    optimizer = optim.SGD(self.layers[-1].parameters(), lr=learning_rate, weight_decay=0)
-    #TODO train it
-    """
-        perform BFS
-    """
-    #mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
-    mask = np.zeros(self.num_tasks)
-    mask[-1] = 1
-    #list of masks for each layer
-    selected_neurons = [[mask]]
-    #list of parameters to retrain
-    params = []
-    while(layer > 0):
-        layer_size = self.sizes[layer]
-        new_mask = np.zeros(layer_size)
-        old_mask = selected_neurons[-1]
-        connections = self.layers[layer].weight
-        for i in range(layer_size):
-            if(connections[i].dot(old_mask).sum() > 0):
-                new_mask[i] = 1
-        params.append(connections[new_mask])
-        selected_neurons.append(new_mask)
-        layer -= 1
-    #TODO train subnetwork
-    optimizer = optim.SGD(params, lr=learning_rate, weight_decay=0)
+    def selective_retrain(self):
+        """
+        Retrain output layer
+        """
+        layer = depth-1
+        #Solving for output layer
+        optimizer = optim.SGD(self.layers[-1].parameters(), lr=learning_rate, weight_decay=0)
+        #TODO train it
+        """
+            perform BFS
+        """
+        #mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
+        mask = np.zeros(self.num_tasks)
+        mask[-1] = 1
+        #list of masks for each layer
+        selected_neurons = [[mask]]
+        #list of parameters to retrain
+        params = []
+        while(layer > 0):
+            layer_size = self.sizes[layer]
+            new_mask = np.zeros(layer_size)
+            old_mask = selected_neurons[-1]
+            connections = self.layers[layer].weight
+            for i in range(layer_size):
+                if(connections[i].dot(old_mask).sum() > 0):
+                    new_mask[i] = 1
+            params.append(connections[new_mask])
+            selected_neurons.append(new_mask)
+            layer -= 1
+        #TODO train subnetwork
+        optimizer = optim.SGD(params, lr=learning_rate, weight_decay=0)
+
+
+    def dynamic_expansion(self, loss, tau=0.02):
+        # Perform selective retraining and compute loss, or get it as param
+        if (loss > tau):
+            #TODO Add units
+            #TODO retrain
+        #TODO remove neurons with no connections
+        pass
+
+    def duplicate(self, sigma=.002):
+        # Retrain network once again ?
+        # Compute connection-wise distance
+        # If distance > sigma, add old neuron to network
+        # Retrain
+        pass
