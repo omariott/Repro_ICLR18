@@ -1,5 +1,7 @@
 import torch as t
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
 
 class DEN(nn.Module):
     def __init__(self, sizes):
@@ -16,27 +18,43 @@ class DEN(nn.Module):
             return x
 
 
-
     def param_norm(self, p=2):
         norm = 0
-        for i, l in enumerate(self.layers):
-            norm += l.weight.norm(p)
+        for l in list(self.parameters()):
+            norm += l.data.norm(p)
         return norm
+
 
     def add_task(self):
         # WARNING Probably kills cuda
         self.num_tasks += 1
         #add output neuron
-        newout = nn.Linear(self.sizes[-1], self.num_tasks)
-        oldout = self.layers[-1]
-        newout.weight[:-1] = oldout.weight
-        if oldout.bias:
-            newout.bias[:-1] = oldout.bias
-        self.layers[-1] = newout
+        old_output = self.layers[-1]
+        new_output = add_output_dim(old_output)
+        self.layers[2*(self.depth-1)] = new_output
 
 
-    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False, first_task=False):
-        if(first_task):
+    def add_neurons(self, l, n_neurons=1):
+        # WARNING Probably kills cuda
+        # add neurons to layer number l
+        if l > (self.depth - 2):
+            print("Error, trying to add neuron to output layer. Please use 'add_task' method instead")
+            exit(-1)
+        #add neurons to layer l
+        old_layer = self.layers[2*l]
+        new_layer = add_output_dim(old_layer, n_neurons)
+        self.layers[2*l] = new_layer
+
+        #add connections to layer l+1
+        old_layer = self.layers[2*(l+1)]
+        new_layer = add_input_dim(old_layer, n_neurons)
+        self.layers[2*(l+1)] = new_layer
+
+
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
+        #print(list(self.parameters()))
+        train_size = x_train.shape[0]
+        if(self.num_tasks != 1):
             for i in range(train_size // batch_size):
                 #load batch
                 indsBatch = range(i * batch_size, (i+1) * batch_size)
@@ -104,3 +122,34 @@ class DEN(nn.Module):
         # If distance > sigma, add old neuron to network
         # Retrain
         pass
+
+
+
+def add_output_dim(old_layer, n_neurons=1):
+    """
+    adds neurons to a layer
+    """
+    # WARNING Probably kills cuda
+    input_dim, output_dim = old_layer.in_features, old_layer.out_features
+    if old_layer.bias is not None:
+        new_layer = nn.Linear(input_dim, output_dim + n_neurons)
+        new_layer.bias[:-n_neurons].data = old_layer.bias.data
+    else:
+        new_layer = nn.Linear(input_dim, output_dim + n_neurons, bias=False)
+    new_layer.weight[:-n_neurons].data = old_layer.weight.data
+    return new_layer
+
+
+def add_input_dim(old_layer, n_neurons=1):
+    """
+    adds connections to a layer to accomodate
+    for new neurons in the previous layer
+    """
+    # WARNING Probably kills cuda
+    input_dim, output_dim = old_layer.in_features, old_layer.out_features
+    if old_layer.bias is not None:
+        new_layer = nn.Linear(input_dim + n_neurons, output_dim)
+    else:
+        new_layer = nn.Linear(input_dim + n_neurons, output_dim, bias=False)
+    new_layer.weight[:,:-n_neurons].data = old_layer.weight.data
+    return new_layer

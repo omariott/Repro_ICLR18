@@ -121,7 +121,7 @@ if __name__ == '__main__':
     learning_rate = 0.001
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 30
+    epochs_nb = 10
     cuda = False
     #WARNING - Task specific
     input_dim = 784
@@ -137,9 +137,11 @@ if __name__ == '__main__':
     #Baseline DNN settings, according to paper
     model = baseDNN(input_dim, output_dim)
 
-    model = DEN([784,500,500])
+    model = DEN([784,500,200])
+    model.add_neurons(1, 300)
     for i in range(9):
         model.add_task()
+
     loss = nn.CrossEntropyLoss()
 
     if cuda:
