@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import _pickle as pickle
 import os.path
+import sklearn.metrics as metric
 
 from DEN import DEN
 
@@ -56,10 +57,12 @@ def read_data(fname):
     y = data[:, -1].astype(int)
     return x,y
 
+'''
 def computeAccuracy(pred, y):
     _, predInd = t.max(pred, 1)
     correctPredictions = t.sum(predInd == y)
     return (correctPredictions.data[0] / y.shape[0])
+'''
 
 #load data from given files and save it as tensors to speed up next executions
 def load_data(trainDataFile,testDataFile):
@@ -84,30 +87,31 @@ def load_data(trainDataFile,testDataFile):
         return pickle.load(open('data_tensors.p', 'rb'))
 
 
-'''
+
 def oneHot(x, nbClass):
     xOneHot = np.zeros((len(x), nbClass))
     xOneHot[np.arange(len(x)), x] = 1
     return xOneHot
-'''
+
 
 def evaluation(model, x_eval,y_eval):
-    acc = 0
     l = 0
-    nb_iter = x_eval.shape[0]//2048
+    nb_iter = x_eval.shape[0]//eval_batch_size
+    outputs = []
     for k in range(nb_iter):
         #load batch
-        indsBatch = range(k * batch_size, (k+1) * batch_size)
+        indsBatch = range(k * eval_batch_size, (k+1) * eval_batch_size)
         x = Variable(x_eval[indsBatch, :], requires_grad=False)
         y = Variable(y_eval[indsBatch], requires_grad=False)
         if cuda: x,y = x.cuda(), y.cuda()
 
         y_til = model(x)
         eval_loss = loss(y_til,y)
-
-        acc += computeAccuracy(F.log_softmax(y_til, dim=0),y)
+        outputs += [F.log_softmax(y_til, dim=0)]
         l += eval_loss.data[0]
-    return l/nb_iter,acc/nb_iter
+
+    auroc = metric.roc_auc_score(oneHot(y_eval[0:eval_batch_size*nb_iter].numpy(),10),t.cat(outputs,0).data.numpy())
+    return l/nb_iter,auroc
 
 if __name__ == '__main__':
     trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
@@ -120,6 +124,7 @@ if __name__ == '__main__':
     #hyperparameters
     learning_rate = 0.001
     batch_size = 32
+    eval_batch_size = 2048
     train_size = x_train.shape[0]
     epochs_nb = 10
     cuda = False
@@ -136,12 +141,12 @@ if __name__ == '__main__':
 
     #Baseline DNN settings, according to paper
     model = baseDNN(input_dim, output_dim)
-
+    '''
     model = DEN([784,500,200])
     model.add_neurons(1, 300)
     for i in range(9):
         model.add_task()
-
+    '''
     loss = nn.CrossEntropyLoss()
 
     if cuda:
@@ -152,9 +157,9 @@ if __name__ == '__main__':
 
     #book keeping
     train_losses = []
-    train_accuracies = []
+    train_aurocs = []
     test_losses = []
-    test_accuracies = []
+    test_aurocs = []
 
     #training of model
     for e in range(epochs_nb):
@@ -162,13 +167,13 @@ if __name__ == '__main__':
         model.batch_pass(x_train, y_train, loss, optim)
 
         #evaluation of current model
-        train_l,train_acc = evaluation(model, x_train,y_train)
-        test_l,test_acc = evaluation(model, x_test,y_test)
+        train_l,train_auroc = evaluation(model, x_train,y_train)
+        test_l,test_auroc = evaluation(model, x_test,y_test)
 
         train_losses.append(train_l)
-        train_accuracies.append(train_acc)
+        train_aurocs.append(train_auroc)
         test_losses.append(test_l)
-        test_accuracies.append(test_acc)
+        test_aurocs.append(test_auroc)
 
     plt.figure()
     plt.plot(train_losses)
@@ -176,8 +181,8 @@ if __name__ == '__main__':
     plt.legend(['train loss', 'test loss'], loc='lower right')
 
     plt.figure()
-    plt.plot(train_accuracies)
-    plt.plot(test_accuracies)
-    plt.legend(['train accuracy', 'test accuracy'], loc='lower right')
+    plt.plot(train_aurocs)
+    plt.plot(test_aurocs)
+    plt.legend(['train AUROC', 'test AUROC'], loc='lower right')
 
     plt.show()
