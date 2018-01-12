@@ -141,12 +141,12 @@ if __name__ == '__main__':
 
     #Baseline DNN settings, according to paper
     #model = baseDNN(input_dim, output_dim)
-    
+
     model = DEN([784,500,200])
-    model.add_neurons(1, 300)
+    model.add_neurons(1, 30)
     for i in range(9):
         model.add_task()
-    
+
 
     loss = nn.CrossEntropyLoss()
 
@@ -162,12 +162,16 @@ if __name__ == '__main__':
     test_losses = []
     test_aurocs = []
 
+
+#    model.selective_retrain(x_train, y_train, loss, optim)
+
     #training of model
     for e in range(epochs_nb):
         print('epoch '+str(e))
         old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
-        model.batch_pass(x_train, y_train, loss, optim)
-        #model.sparsify(old_params_list)
+#        model.batch_pass(x_train, y_train, loss, optim)
+        model.sparsify(old_params_list)
+#        model.selective_retrain(x_train, y_train, loss, optim)
 
         #evaluation of current model
         train_l,train_auroc = evaluation(model, x_train,y_train)
