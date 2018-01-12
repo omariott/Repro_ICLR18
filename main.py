@@ -109,7 +109,6 @@ def evaluation(model, x_eval,y_eval):
         eval_loss = loss(y_til,y)
         outputs += [F.log_softmax(y_til, dim=0)]
         l += eval_loss.data[0]
-
     auroc = metric.roc_auc_score(oneHot(y_eval[0:eval_batch_size*nb_iter].numpy(),10),t.cat(outputs,0).data.numpy())
     return l/nb_iter,auroc
 
@@ -168,14 +167,14 @@ if __name__ == '__main__':
     #training of model
     for e in range(epochs_nb):
         print('epoch '+str(e))
-        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
-#        model.batch_pass(x_train, y_train, loss, optim)
-        model.sparsify(old_params_list)
+#        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
+        model.batch_pass(x_train, y_train, loss, optim)
+#        model.sparsify(old_params_list)
 #        model.selective_retrain(x_train, y_train, loss, optim)
 
         #evaluation of current model
-        train_l,train_auroc = evaluation(model, x_train,y_train)
-        test_l,test_auroc = evaluation(model, x_test,y_test)
+        train_l,train_auroc = evaluation(model, x_train, y_train)
+        test_l,test_auroc = evaluation(model, x_test, y_test)
 
         train_losses.append(train_l)
         train_aurocs.append(train_auroc)
