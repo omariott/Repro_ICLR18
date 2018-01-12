@@ -57,13 +57,6 @@ def read_data(fname):
     y = data[:, -1].astype(int)
     return x,y
 
-'''
-def computeAccuracy(pred, y):
-    _, predInd = t.max(pred, 1)
-    correctPredictions = t.sum(predInd == y)
-    return (correctPredictions.data[0] / y.shape[0])
-'''
-
 #load data from given files and save it as tensors to speed up next executions
 def load_data(trainDataFile,testDataFile):
     if not os.path.isfile('data_tensors.p'):
@@ -94,7 +87,7 @@ def oneHot(x, nbClass):
     return xOneHot
 
 
-def evaluation(model, x_eval,y_eval):
+def evaluation(model, x_eval,y_eval,nb_class):
     l = 0
     nb_iter = x_eval.shape[0]//eval_batch_size
     outputs = []
@@ -110,7 +103,7 @@ def evaluation(model, x_eval,y_eval):
         outputs += [F.log_softmax(y_til, dim=0)]
         l += eval_loss.data[0]
 
-    auroc = metric.roc_auc_score(oneHot(y_eval[0:eval_batch_size*nb_iter].numpy(),10),t.cat(outputs,0).data.numpy())
+    auroc = metric.roc_auc_score(oneHot(y_eval[0:eval_batch_size*nb_iter].numpy(),nb_class),t.cat(outputs,0).data.numpy())
     return l/nb_iter,auroc
 
 if __name__ == '__main__':
@@ -126,7 +119,7 @@ if __name__ == '__main__':
     batch_size = 32
     eval_batch_size = 2048
     train_size = x_train.shape[0]
-    epochs_nb = 30
+    epochs_nb = 10
     cuda = False
     #WARNING - Task specific
     input_dim = 784
@@ -139,15 +132,14 @@ if __name__ == '__main__':
 
 
 
-    #Baseline DNN settings, according to paper
-    model = baseDNN(input_dim, output_dim)
+    #DNN model as presented in paper
+    model = baseDNN(input_dim, 2)
     '''
     model = DEN([784,500,200])
     model.add_neurons(1, 300)
     for i in range(9):
         model.add_task()
     '''
-
     loss = nn.CrossEntropyLoss()
 
     if cuda:
@@ -156,38 +148,39 @@ if __name__ == '__main__':
 
     optim = t.optim.Adam(model.parameters(), lr=learning_rate)
 
-    #book keeping
-    train_losses = []
-    train_aurocs = []
-    test_losses = []
+    #book keeping per task
     test_aurocs = []
+    #overall book_keeping
+    mean_auroc_test = []
 
-    #training of model
-    for e in range(epochs_nb):
-        print('epoch '+str(e))
-        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
-        model.batch_pass(x_train, y_train, loss, optim)
-        model.sparsify(old_params_list)
+    #training of binary model for each task from 1 to T
+    task_y_train = t.LongTensor(y_train.shape).zero_()
+    task_y_test = t.LongTensor(y_test.shape).zero_()
+    for task_nb in range(output_dim):
+        print("task " + str(task_nb))
+        #create mapping for binary classif in oneVSall fashion
+        task_y_train.zero_()
+        task_y_test.zero_()
+        task_y_train[y_train == task_nb] = 1
+        task_y_test[y_test == task_nb] = 1
 
-        #evaluation of current model
-        train_l,train_auroc = evaluation(model, x_train,y_train)
-        test_l,test_auroc = evaluation(model, x_test,y_test)
+        #training of model on task
+        for e in range(epochs_nb):
+            print('epoch '+str(e))
+            model.batch_pass(x_train, task_y_train, loss, optim)
 
-        train_losses.append(train_l)
-        train_aurocs.append(train_auroc)
-        test_losses.append(test_l)
-        test_aurocs.append(test_auroc)
+            #evalution of auroc'score on test for this epoch
+            _,test_auroc = evaluation(model, x_test,task_y_test,2)
+            test_aurocs.append(test_auroc)
 
-        print(model.sparsity())
+        mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
+        test_aurocs = []
 
     plt.figure()
-    plt.plot(train_losses)
-    plt.plot(test_losses)
-    plt.legend(['train loss', 'test loss'], loc='lower right')
+    plt.plot(mean_auroc_test)
+    plt.legend(['DNN'], loc='upper right')
+    plt.xlabel("Number of tasks2")
+    plt.ylabel("AUROC")
 
-    plt.figure()
-    plt.plot(train_aurocs)
-    plt.plot(test_aurocs)
-    plt.legend(['train AUROC', 'test AUROC'], loc='lower right')
+    plt.show(block=False)
 
-    plt.show()
