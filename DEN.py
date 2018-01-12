@@ -21,8 +21,24 @@ class DEN(nn.Module):
     def param_norm(self, p=2):
         norm = 0
         for l in list(self.parameters()):
-            norm += l.data.norm(p)
+            norm += l.norm(p)
         return norm
+
+    def sparsify(self, old_params_list):
+        for i, l in enumerate(self.parameters()):
+            mask = (l*old_params_list[i]) > 0
+            l.data *= mask.data.float()
+
+    def sparsity(self):
+        num = 0
+        denom = 0
+        for i, l in enumerate(self.parameters()):
+            num += (l != 0).sum().data[0]
+            prod = 1
+            for dim in l.size():
+                prod *= dim
+            denom += prod
+        return num/denom
 
 
     def add_task(self):
@@ -65,11 +81,14 @@ class DEN(nn.Module):
                 #forward
                 y_til = self.forward(x)
                 #loss and backward
-                l = loss(y_til,y) + mu * self.param_norm(p)
+                l = loss(y_til,y)
                 optim.zero_grad()
                 l.backward()
                 optim.step()
-
+            l = mu* self.param_norm()
+            optim.zero_grad()
+            l.backward()
+            optim.step()
 
     def selective_retrain(self, x_train, y_train, loss, n_epochs=10):
         """

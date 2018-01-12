@@ -121,7 +121,7 @@ if __name__ == '__main__':
     learning_rate = 0.001
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 10
+    epochs_nb = 30
     cuda = False
     #WARNING - Task specific
     input_dim = 784
@@ -142,6 +142,7 @@ if __name__ == '__main__':
     for i in range(9):
         model.add_task()
 
+
     loss = nn.CrossEntropyLoss()
 
     if cuda:
@@ -159,7 +160,9 @@ if __name__ == '__main__':
     #training of model
     for e in range(epochs_nb):
         print('epoch '+str(e))
+        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
         model.batch_pass(x_train, y_train, loss, optim)
+        model.sparsify(old_params_list)
 
         #evaluation of current model
         train_l,train_acc = evaluation(model, x_train,y_train)
@@ -169,6 +172,8 @@ if __name__ == '__main__':
         train_accuracies.append(train_acc)
         test_losses.append(test_l)
         test_accuracies.append(test_acc)
+
+        print(model.sparsity())
 
     plt.figure()
     plt.plot(train_losses)
