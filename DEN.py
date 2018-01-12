@@ -152,14 +152,51 @@ class DEN(nn.Module):
 
         self.unhook()
 
-    def dynamic_expansion(self, loss, tau=0.02):
+    def dynamic_expansion(self, loss, tau=0.02, n_epochs=10):
+    	#TODO FIGURE OUT NB NEURON TO ADD
+    	nb_add_neuron = 30
         # Perform selective retraining and compute loss, or get it as param
         if (loss > tau):
-            #TODO Add units
+            #add new units
+            for l in range(depth-1):
+            	self.add_neurons(l,nb_add_neuron)
 
-            #TODO retrain
-            pass
-        #TODO remove neurons with no connections
+            #retrain network
+
+            #first register hook for each layer
+            for i,l in enumerate(self.layers):
+            	#define hook depending on considered layer
+            	if i == 0:
+            		def my_hook(grad):
+					    grad_clone = grad.clone()
+					    grad_clone[:-nb_add_neuron,:] = 0
+					    return grad_clone
+            	elif i == self.depth-1:
+            		def my_hook(grad):
+					    grad_clone = grad.clone()
+					    grad_clone[0,:-nb_add_neuron] = 0
+					    return grad_clone
+            	else: #hidden layers
+            		def my_hook(grad):
+					    grad_clone = grad.clone()
+					    grad_clone[:-nb_add_neuron,:-nb_add_neuron] = 0
+					    return grad_clone
+
+				#register hook to weight variable
+            	l.weight.register_hook(my_hook)
+
+            #train added neurons, layer per layer, with l1 norm for sparsity
+            for l in self.layers:
+            	optimizer = optim.SGD([l.weight,l.bias], lr=learning_rate, weight_decay=0)
+	        	for i in range(n_epochs):
+	            	self.batch_pass(x_train, y_train, loss, optimizer, p=1)
+
+	        #remove useless units among the added ones
+	        for l in self.layers:
+	        	pass
+	        	#TODO REMOVE USELESS UNITS
+
+
         pass
 
     def duplicate(self, sigma=.002):
