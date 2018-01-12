@@ -126,7 +126,7 @@ if __name__ == '__main__':
     batch_size = 32
     eval_batch_size = 2048
     train_size = x_train.shape[0]
-    epochs_nb = 30
+    epochs_nb = 5
     cuda = False
     #WARNING - Task specific
     input_dim = 784
@@ -140,13 +140,13 @@ if __name__ == '__main__':
 
 
     #Baseline DNN settings, according to paper
-    model = baseDNN(input_dim, output_dim)
-    '''
+    #model = baseDNN(input_dim, output_dim)
+    
     model = DEN([784,500,200])
     model.add_neurons(1, 300)
     for i in range(9):
         model.add_task()
-    '''
+    
 
     loss = nn.CrossEntropyLoss()
 
@@ -167,7 +167,7 @@ if __name__ == '__main__':
         print('epoch '+str(e))
         old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
         model.batch_pass(x_train, y_train, loss, optim)
-        model.sparsify(old_params_list)
+        #model.sparsify(old_params_list)
 
         #evaluation of current model
         train_l,train_auroc = evaluation(model, x_train,y_train)
@@ -178,7 +178,7 @@ if __name__ == '__main__':
         test_losses.append(test_l)
         test_aurocs.append(test_auroc)
 
-        print(model.sparsity())
+        #print(model.sparsity())
 
     plt.figure()
     plt.plot(train_losses)

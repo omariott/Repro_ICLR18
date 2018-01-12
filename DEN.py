@@ -9,12 +9,13 @@ class DEN(nn.Module):
         self.depth = len(sizes)
         self.sizes = sizes
         self.num_tasks = 1
-        self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) if odd-1 else nn.ReLU() for i in range(self.depth-1) for odd in range(2)] + [nn.Linear(sizes[-1], 1)])
+        #self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) if odd-1 else nn.ReLU() for i in range(self.depth-1) for odd in range(2)] + [nn.Linear(sizes[-1], 1)])
+        self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) for i in range(self.depth-1)] + [nn.Linear(sizes[-1], 1)])
 
     def forward(self, x):
-            for i, l in enumerate(self.layers):
-                if i<self.depth*2-1:
-                    x = l(x)
+            for i, linear in enumerate(self.layers):
+                if i<self.depth-1:
+                    x = F.relu(linear(x))
             return x
 
 
@@ -47,7 +48,7 @@ class DEN(nn.Module):
         #add output neuron
         old_output = self.layers[-1]
         new_output = add_output_dim(old_output)
-        self.layers[2*(self.depth-1)] = new_output
+        self.layers[self.depth-1] = new_output
 
 
     def add_neurons(self, l, n_neurons=1):
@@ -57,14 +58,14 @@ class DEN(nn.Module):
             print("Error, trying to add neuron to output layer. Please use 'add_task' method instead")
             exit(-1)
         #add neurons to layer l
-        old_layer = self.layers[2*l]
+        old_layer = self.layers[l]
         new_layer = add_output_dim(old_layer, n_neurons)
-        self.layers[2*l] = new_layer
+        self.layers[l] = new_layer
 
         #add connections to layer l+1
-        old_layer = self.layers[2*(l+1)]
+        old_layer = self.layers[l+1]
         new_layer = add_input_dim(old_layer, n_neurons)
-        self.layers[2*(l+1)] = new_layer
+        self.layers[l+1] = new_layer
 
 
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
@@ -130,6 +131,7 @@ class DEN(nn.Module):
         # Perform selective retraining and compute loss, or get it as param
         if (loss > tau):
             #TODO Add units
+
             #TODO retrain
             pass
         #TODO remove neurons with no connections
