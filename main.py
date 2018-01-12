@@ -168,7 +168,6 @@ if __name__ == '__main__':
         old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
         model.batch_pass(x_train, y_train, loss, optim)
         #model.sparsify(old_params_list)
-
         #evaluation of current model
         train_l,train_auroc = evaluation(model, x_train,y_train)
         test_l,test_auroc = evaluation(model, x_test,y_test)

@@ -31,7 +31,7 @@ class baseDNN(nn.Module):
     def forward(self,x):
         h_out = F.relu(self.f1(x))
         out = self.f2(h_out)
-        return F.log_softmax(out,dim=0)
+        return out
 
     def batch_pass(self, x_train, y_train, loss, optim, batch_size=32, cuda=False):
         for i in range(train_size // batch_size):
@@ -136,7 +136,15 @@ if __name__ == '__main__':
     model = baseDNN(input_dim, 2)
     '''
     model = DEN([784,500,200])
-    model.add_neurons(1, 300)
+    print(model)
+    print(model.depth)
+    for l in model.layers:
+    	print(l.weight.shape)
+    model.add_neurons(1, 30)
+    model.add_neurons(0, 30)
+    print(model)
+    for l in model.layers:
+    	print(l.weight.shape)
     for i in range(9):
         model.add_task()
     '''

@@ -16,7 +16,9 @@ class DEN(nn.Module):
             for i, linear in enumerate(self.layers):
                 if i<self.depth-1:
                     x = F.relu(linear(x))
-            return x
+                else: #output layer
+                    out = linear(x)
+            return out
 
 
     def param_norm(self, p=2):
@@ -128,6 +130,8 @@ class DEN(nn.Module):
             self.batch_pass(x_train, y_train, loss, optimizer, p=2)
 
     def dynamic_expansion(self, loss, tau=0.02, n_epochs=10):
+    	pass
+    	'''
     	#TODO FIGURE OUT NB NEURON TO ADD
     	nb_add_neuron = 30
         # Perform selective retraining and compute loss, or get it as param
@@ -170,10 +174,7 @@ class DEN(nn.Module):
 	        for l in self.layers:
 	        	pass
 	        	#TODO REMOVE USELESS UNITS
-
-
-        pass
-
+		'''
     def duplicate(self, sigma=.002):
         # Retrain network once again ?
         # Compute connection-wise distance
