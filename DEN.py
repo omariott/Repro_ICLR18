@@ -9,8 +9,10 @@ class DEN(nn.Module):
         self.depth = len(sizes)
         self.sizes = sizes
         self.num_tasks = 1
-        #self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) if odd-1 else nn.ReLU() for i in range(self.depth-1) for odd in range(2)] + [nn.Linear(sizes[-1], 1)])
         self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) for i in range(self.depth-1)] + [nn.Linear(sizes[-1], 1)])
+        self.w_hooks = [t.zeros(size) for size in sizes]
+        self.b_hooks = [t.zeros(size) for size in sizes]
+        self.hook_handles = []
 
     def forward(self, x):
             for i, linear in enumerate(self.layers):
@@ -69,6 +71,33 @@ class DEN(nn.Module):
         new_layer = add_input_dim(old_layer, n_neurons)
         self.layers[l+1] = new_layer
 
+    def compute_hooks(self):
+        current_layer = self.depth-1
+        #mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
+        out_mask = t.zeros(self.num_tasks)
+        out_mask[-1] = 1
+        while(current_layer >= 0):
+            #get the weights between current layer and the following one
+            connections = self.layers[current_layer].weight.data
+            output_size, input_size = connections.shape
+            in_mask = t.zeros(input_size)
+            for index, line in enumerate(connections):
+                if(out_mask[index] == 1):
+                    t.max(in_mask, (line != 0).float(), out=in_mask)
+            self.b_hooks[current_layer] = out_mask
+            self.w_hooks[current_layer] = t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0))
+            out_mask = in_mask
+            current_layer -= 1
+
+    def register_hooks(self):
+        for i, l in enumerate(self.layers):
+            self.hook_handles.append(l.bias.register_hook(make_hook(self.b_hooks[i])))
+            self.hook_handles.append(l.weight.register_hook(make_hook(self.w_hooks[i])))
+
+    def unhook(self):
+        for handle in self.hook_handles:
+            handle.remove()
+        self.hook_handles = []
 
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
         #print(list(self.parameters()))
@@ -93,41 +122,29 @@ class DEN(nn.Module):
             l.backward()
             optim.step()
 
-    def selective_retrain(self, x_train, y_train, loss, n_epochs=10):
+    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=1):
         """
         Retrain output layer
         """
-        layer = depth-1
         #Solving for output layer
-        optimizer = optim.SGD(self.layers[-1].parameters(), lr=learning_rate, weight_decay=0)
+        output_optimizer = t.optim.SGD(self.layers[-1].parameters(), lr=0.1, weight_decay=0)
         # train it
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, p=1)
+            self.batch_pass(x_train, y_train, loss, output_optimizer, p=1)
         """
             perform BFS
         """
-        #mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
-        mask = np.zeros(self.num_tasks)
-        mask[-1] = 1
-        #list of masks for each layer
-        selected_neurons = [[mask]]
-        #list of parameters to retrain
-        params = []
-        while(layer > 0):
-            layer_size = self.sizes[layer]
-            new_mask = np.zeros(layer_size)
-            old_mask = selected_neurons[-1]
-            connections = self.layers[layer].weight
-            for i in range(layer_size):
-                if(connections[i].dot(old_mask).sum() > 0):
-                    new_mask[i] = 1
-            params.append(connections[new_mask])
-            selected_neurons.append(new_mask)
-            layer -= 1
+        self.compute_hooks()
+        self.register_hooks()
+
         # train subnetwork
-        optimizer = optim.SGD(params, lr=learning_rate, weight_decay=0)
+
+        """
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, p=2)
+        """
+
+        self.unhook()
 
     def dynamic_expansion(self, loss, tau=0.02, n_epochs=10):
     	pass
@@ -138,43 +155,43 @@ class DEN(nn.Module):
         if (loss > tau):
             #add new units
             for l in range(depth-1):
-            	self.add_neurons(l,nb_add_neuron)
+                self.add_neurons(l,nb_add_neuron)
 
             #retrain network
 
             #first register hook for each layer
             for i,l in enumerate(self.layers):
-            	#define hook depending on considered layer
-            	if i == 0:
-            		def my_hook(grad):
-					    grad_clone = grad.clone()
-					    grad_clone[:-nb_add_neuron,:] = 0
-					    return grad_clone
-            	elif i == self.depth-1:
-            		def my_hook(grad):
-					    grad_clone = grad.clone()
-					    grad_clone[0,:-nb_add_neuron] = 0
-					    return grad_clone
-            	else: #hidden layers
-            		def my_hook(grad):
-					    grad_clone = grad.clone()
-					    grad_clone[:-nb_add_neuron,:-nb_add_neuron] = 0
-					    return grad_clone
+                #define hook depending on considered layer
+                if i == 0:
+                    def my_hook(grad):
+                        grad_clone = grad.clone()
+                        grad_clone[:-nb_add_neuron,:] = 0
+                        return grad_clone
+                elif i == self.depth-1:
+                    def my_hook(grad):
+                        grad_clone = grad.clone()
+                        grad_clone[0,:-nb_add_neuron] = 0
+                        return grad_clone
+                else: #hidden layers
+                    def my_hook(grad):
+                        grad_clone = grad.clone()
+                        grad_clone[:-nb_add_neuron,:-nb_add_neuron] = 0
+                        return grad_clone
 
-				#register hook to weight variable
-            	l.weight.register_hook(my_hook)
+                #register hook to weight variable
+                l.weight.register_hook(my_hook)
 
             #train added neurons, layer per layer, with l1 norm for sparsity
             for l in self.layers:
-            	optimizer = optim.SGD([l.weight,l.bias], lr=learning_rate, weight_decay=0)
-	        	for i in range(n_epochs):
-	            	self.batch_pass(x_train, y_train, loss, optimizer, p=1)
-
+                optimizer = optim.SGD([l.weight,l.bias], lr=learning_rate, weight_decay=0)
+                for i in range(n_epochs):
+                       self.batch_pass(x_train, y_train, loss, optimizer, p=1)
 	        #remove useless units among the added ones
 	        for l in self.layers:
 	        	pass
 	        	#TODO REMOVE USELESS UNITS
 		'''
+
     def duplicate(self, sigma=.002):
         # Retrain network once again ?
         # Compute connection-wise distance
@@ -212,3 +229,12 @@ def add_input_dim(old_layer, n_neurons=1):
         new_layer = nn.Linear(input_dim + n_neurons, output_dim, bias=False)
     new_layer.weight[:,:-n_neurons].data = old_layer.weight.data
     return new_layer
+
+
+def make_hook(hook):
+#    print(hook.shape)
+    def hooker(grad):
+#        print(hook.shape, grad.shape)
+        return grad * Variable(hook, requires_grad=False)
+#    print("hooked)
+    return hooker

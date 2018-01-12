@@ -109,7 +109,6 @@ def evaluation(model, x_eval,y_eval):
         eval_loss = loss(y_til,y)
         outputs += [F.log_softmax(y_til, dim=0)]
         l += eval_loss.data[0]
-
     auroc = metric.roc_auc_score(oneHot(y_eval[0:eval_batch_size*nb_iter].numpy(),10),t.cat(outputs,0).data.numpy())
     return l/nb_iter,auroc
 
@@ -141,12 +140,12 @@ if __name__ == '__main__':
 
     #Baseline DNN settings, according to paper
     #model = baseDNN(input_dim, output_dim)
-    
+
     model = DEN([784,500,200])
-    model.add_neurons(1, 300)
+    model.add_neurons(1, 30)
     for i in range(9):
         model.add_task()
-    
+
 
     loss = nn.CrossEntropyLoss()
 
@@ -162,15 +161,20 @@ if __name__ == '__main__':
     test_losses = []
     test_aurocs = []
 
+
+#    model.selective_retrain(x_train, y_train, loss, optim)
+
     #training of model
     for e in range(epochs_nb):
         print('epoch '+str(e))
-        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
+#        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
         model.batch_pass(x_train, y_train, loss, optim)
-        #model.sparsify(old_params_list)
+#        model.sparsify(old_params_list)
+#        model.selective_retrain(x_train, y_train, loss, optim)
+
         #evaluation of current model
-        train_l,train_auroc = evaluation(model, x_train,y_train)
-        test_l,test_auroc = evaluation(model, x_test,y_test)
+        train_l,train_auroc = evaluation(model, x_train, y_train)
+        test_l,test_auroc = evaluation(model, x_test, y_test)
 
         train_losses.append(train_l)
         train_aurocs.append(train_auroc)
