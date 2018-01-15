@@ -86,7 +86,6 @@ def oneHot(x, nbClass):
     xOneHot[np.arange(len(x)), x] = 1
     return xOneHot
 
-
 def evaluation(model, x_eval,y_eval,nb_class):
     l = 0
     nb_iter = x_eval.shape[0]//eval_batch_size
@@ -98,12 +97,15 @@ def evaluation(model, x_eval,y_eval,nb_class):
         y = Variable(y_eval[indsBatch], requires_grad=False)
         if cuda: x,y = x.cuda(), y.cuda()
 
-        y_til = model(x)
-        eval_loss = loss(y_til,y)
-        outputs += [F.log_softmax(y_til, dim=0)]
+        y_til = model(x)[:,(model.num_tasks-1)]
+        out = F.sigmoid(y_til)
+        eval_loss = loss(out,y)
+        outputs += [out]
         l += eval_loss.data[0]
 
-    auroc = metric.roc_auc_score(oneHot(y_eval[0:eval_batch_size*nb_iter].numpy(),nb_class),t.cat(outputs,0).data.numpy())
+    y_true = oneHot(y_eval[0:eval_batch_size*nb_iter].int().numpy(),nb_class)
+    y_score = t.cat(outputs,0).data.numpy().reshape(-1,1)
+    auroc = metric.roc_auc_score(y_true,y_score)
     return l/nb_iter,auroc
 
 if __name__ == '__main__':
@@ -121,6 +123,7 @@ if __name__ == '__main__':
     train_size = x_train.shape[0]
     epochs_nb = 10
     cuda = False
+    verbose = False
     #WARNING - Task specific
     input_dim = 784
     output_dim = 10
@@ -131,39 +134,34 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
+    is_DEN = True
 
     #DNN model as presented in paper
-    model = baseDNN(input_dim, 2)
-    '''
-    model = DEN([784,500,200])
-    print(model)
-    print(model.depth)
-    for l in model.layers:
-    	print(l.weight.shape)
-    model.add_neurons(1, 30)
-    model.add_neurons(0, 30)
-    print(model)
-    for l in model.layers:
-    	print(l.weight.shape)
-    for i in range(9):
-        model.add_task()
-    '''
-    loss = nn.CrossEntropyLoss()
+    if is_DEN:
+        model = DEN([784,500,500])
+        print(model)
+        print(model.depth)
+    else:
+        #WARNING NO LONGER WORKS
+        model = baseDNN(input_dim, 2)
+
+    loss = nn.BCELoss()
 
     if cuda:
         model = model.cuda()
         loss = loss.cuda()
 
-    optim = t.optim.Adam(model.parameters(), lr=learning_rate)
+    optim = t.optim.SGD(model.parameters(), lr=learning_rate)
 
     #book keeping per task
     test_aurocs = []
+    losses = []
     #overall book_keeping
     mean_auroc_test = []
 
     #training of binary model for each task from 1 to T
-    task_y_train = t.LongTensor(y_train.shape).zero_()
-    task_y_test = t.LongTensor(y_test.shape).zero_()
+    task_y_train = t.FloatTensor(y_train.shape).zero_()
+    task_y_test = t.FloatTensor(y_test.shape).zero_()
     for task_nb in range(output_dim):
         print("task " + str(task_nb))
         #create mapping for binary classif in oneVSall fashion
@@ -178,16 +176,28 @@ if __name__ == '__main__':
             model.batch_pass(x_train, task_y_train, loss, optim)
 
             #evalution of auroc'score on test for this epoch
-            _,test_auroc = evaluation(model, x_test,task_y_test,2)
+            l,test_auroc = evaluation(model, x_test,task_y_test,2)
             test_aurocs.append(test_auroc)
+            losses.append(l)
 
         mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
         test_aurocs = []
 
+        model.add_task()
+
+        if verbose:
+            plt.figure()
+            plt.plot(losses)
+            plt.legend(['DEN'], loc='upper right')
+            plt.xlabel("nb of epochs")
+            plt.ylabel("loss")
+            losses = []
+            plt.show(block=False)
+
     plt.figure()
     plt.plot(mean_auroc_test)
-    plt.legend(['DNN'], loc='upper right')
-    plt.xlabel("Number of tasks2")
+    plt.legend(['DEN'], loc='upper right')
+    plt.xlabel("Number of tasks")
     plt.ylabel("AUROC")
 
     plt.show(block=False)

@@ -99,6 +99,7 @@ class DEN(nn.Module):
             handle.remove()
         self.hook_handles = []
 
+    '''
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
         #print(list(self.parameters()))
         train_size = x_train.shape[0]
@@ -121,6 +122,29 @@ class DEN(nn.Module):
             optim.zero_grad()
             l.backward()
             optim.step()
+    '''
+
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
+        #incremental learning batch pass (output considered dependant on task)
+        #print(list(self.parameters()))
+        train_size = x_train.shape[0]
+        for i in range(train_size // batch_size):
+            #load batch
+            indsBatch = range(i * batch_size, (i+1) * batch_size)
+            x = Variable(x_train[indsBatch, :], requires_grad=False)
+            y = Variable(y_train[indsBatch], requires_grad=False)
+            if cuda: x,y = x.cuda(), y.cuda()
+
+            #forward
+            y_til = self.forward(x)[:,(self.num_tasks-1)]
+            #loss and backward
+            #print(F.sigmoid(y_til))
+            l = mu* self.param_norm() + loss(F.sigmoid(y_til),y)
+            optim.zero_grad()
+            l.backward()
+            optim.step()
+
+
 
     def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=1):
         """
