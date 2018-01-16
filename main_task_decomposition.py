@@ -133,11 +133,7 @@ if __name__ == '__main__':
     batch_size = 32
     eval_batch_size = 2048
     train_size = x_train.shape[0]
-<<<<<<< HEAD
-    epochs_nb = 2
-=======
     epochs_nb = 5
->>>>>>> bc030595b6e38bc56d7f60f182ae41f2fe2bee08
     cuda = False
     verbose = True
     #WARNING - Task specific
@@ -190,7 +186,6 @@ if __name__ == '__main__':
         task_y_test[y_test == task_nb] = 1
 
         #training of model on task
-<<<<<<< HEAD
         if(model.num_tasks == 1):
             for e in range(epochs_nb):
                 print('epoch '+str(e))
@@ -208,7 +203,7 @@ if __name__ == '__main__':
         """
 #        mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
         test_aurocs = []
-=======
+        """
         for e in range(epochs_nb):
             print('epoch '+str(e))
             model.batch_pass(x_train, task_y_train, loss, optim)
@@ -225,8 +220,7 @@ if __name__ == '__main__':
 
         tasks_test_aurocs.append(test_aurocs[-1])
         tasks_train_aurocs.append(train_aurocs[-1])
->>>>>>> bc030595b6e38bc56d7f60f182ae41f2fe2bee08
-
+        """
         model.add_task()
 
         if verbose:
@@ -261,8 +255,3 @@ if __name__ == '__main__':
     plt.ylabel("AUROC")
 
     plt.show(block=False)
-<<<<<<< HEAD
-=======
-
-
->>>>>>> bc030595b6e38bc56d7f60f182ae41f2fe2bee08
