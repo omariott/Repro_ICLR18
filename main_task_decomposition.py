@@ -188,25 +188,17 @@ if __name__ == '__main__':
         #training of model on task
         if(model.num_tasks == 1):
             for e in range(epochs_nb):
-                print('epoch '+str(e))
+#                print('epoch '+str(e))
                 model.batch_pass(x_train, task_y_train, loss, optim)
-
-                #evalution of auroc'score on test for this epoch
-                l,test_auroc = evaluation(model, x_test,task_y_test,2)
-                test_aurocs.append(test_auroc)
-                losses.append(l)
         else:
             model.selective_retrain(x_train, y_train, loss, optim, n_epochs=epochs_nb)
 
         """
         À réparer !!!
         """
-#        mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
-        test_aurocs = []
-        """
         for e in range(epochs_nb):
-            print('epoch '+str(e))
-            model.batch_pass(x_train, task_y_train, loss, optim)
+#            print('epoch '+str(e))
+#            model.batch_pass(x_train, task_y_train, loss, optim)
 
             #evaluation of auroc'score for this epoch
             test_l,test_auroc,test_acc = evaluation(model, x_test,task_y_test,2)
@@ -220,7 +212,7 @@ if __name__ == '__main__':
 
         tasks_test_aurocs.append(test_aurocs[-1])
         tasks_train_aurocs.append(train_aurocs[-1])
-        """
+
         model.add_task()
 
         if verbose:
@@ -231,14 +223,16 @@ if __name__ == '__main__':
             plt.xlabel("nb of epochs")
             plt.ylabel("loss")
             plt.show(block=False)
+#            fig.savefig("loss"+str(task_nb))
 
-            plt.figure()
+            fig = plt.figure()
             plt.plot(train_accs)
             plt.plot(test_accs)
             plt.legend(['train accuracy','test accuracy'], loc='upper right')
             plt.xlabel("nb of epochs")
             plt.ylabel("accuracy")
             plt.show(block=False)
+#            fig.savefig("acc"+str(task_nb))
 
         test_aurocs = []
         train_aurocs = []
@@ -247,11 +241,11 @@ if __name__ == '__main__':
         train_losses = []
         test_losses = []
 
-    plt.figure()
+    fig = plt.figure()
     plt.plot(tasks_train_aurocs)
     plt.plot(tasks_test_aurocs)
     plt.legend(['DEN auroc train','DEN auroc test'], loc='upper right')
     plt.xlabel("Number of tasks")
     plt.ylabel("AUROC")
-
     plt.show(block=False)
+#    fig.savefig("ROC")

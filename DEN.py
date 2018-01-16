@@ -34,7 +34,7 @@ class DEN(nn.Module):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
-    def sparsify_thres(self, tau=0.025):
+    def sparsify_thres(self, tau=0.01):
         for i, l in enumerate(self.parameters()):
             mask = l.data.abs() > tau
             l.data *= mask.float()
@@ -154,7 +154,7 @@ class DEN(nn.Module):
 
     def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=1):
         """
-        Retrain output layer
+            Retrain output layer
         """
         #Solving for output layer
         out_params = self.layers[-1].parameters()
@@ -169,10 +169,9 @@ class DEN(nn.Module):
         """
         self.compute_hooks()
         self.register_hooks()
-
-        # train subnetwork
-
-
+        """
+        #  train subnetwork
+        """
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, p=2)
 
