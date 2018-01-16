@@ -86,6 +86,15 @@ def oneHot(x, nbClass):
     xOneHot[np.arange(len(x)), x] = 1
     return xOneHot
 
+
+def computeAccuracy(y_out, y_true):
+    #pred and y are n*1 numpy arrays
+    preds = np.zeros(np.shape(y_true))
+    preds[y_out.squeeze() >= 0.5] = 1
+    accuracy = metric.accuracy_score(y_true,preds)
+    return accuracy
+
+
 def evaluation(model, x_eval,y_eval,nb_class):
     l = 0
     nb_iter = x_eval.shape[0]//eval_batch_size
@@ -103,27 +112,30 @@ def evaluation(model, x_eval,y_eval,nb_class):
         outputs += [out]
         l += eval_loss.data[0]
 
-    y_true = oneHot(y_eval[0:eval_batch_size*nb_iter].int().numpy(),nb_class)
-    y_score = t.cat(outputs,0).data.numpy().reshape(-1,1)
-    auroc = metric.roc_auc_score(y_true,y_score)
-    return l/nb_iter,auroc
+    np_y_eval = y_eval[0:eval_batch_size*nb_iter].int().numpy()
+    y_score = t.cat(outputs,0).data.numpy()
+    auroc = metric.roc_auc_score(np_y_eval,y_score)
+    acc = computeAccuracy(y_score,np_y_eval)
+    return l/nb_iter,auroc,acc
 
 if __name__ == '__main__':
-    trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
-    testDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_test.amat"
+    #trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
+    #testDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_test.amat"
+    trainDataFile = "mnist/mnist_train.amat"
+    testDataFile = "mnist/mnist_test.amat"
 
     print('loading data...',end='',flush=True)
     x_train,y_train,x_test,y_test = load_data(trainDataFile, testDataFile)
     print('done',flush=True)
 
     #hyperparameters
-    learning_rate = 0.001
+    learning_rate = 0.01
     batch_size = 32
     eval_batch_size = 2048
     train_size = x_train.shape[0]
-    epochs_nb = 10
+    epochs_nb = 5
     cuda = False
-    verbose = False
+    verbose = True
     #WARNING - Task specific
     input_dim = 784
     output_dim = 10
@@ -155,14 +167,19 @@ if __name__ == '__main__':
 
     #book keeping per task
     test_aurocs = []
-    losses = []
+    train_aurocs = []
+    train_losses = []
+    test_losses = []
+    test_accs = []
+    train_accs = []
     #overall book_keeping
-    mean_auroc_test = []
+    tasks_test_aurocs = []
+    tasks_train_aurocs = []
 
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(output_dim):
+    for task_nb in range(4):
         print("task " + str(task_nb))
         #create mapping for binary classif in oneVSall fashion
         task_y_train.zero_()
@@ -175,30 +192,52 @@ if __name__ == '__main__':
             print('epoch '+str(e))
             model.batch_pass(x_train, task_y_train, loss, optim)
 
-            #evalution of auroc'score on test for this epoch
-            l,test_auroc = evaluation(model, x_test,task_y_test,2)
+            #evaluation of auroc'score for this epoch
+            test_l,test_auroc,test_acc = evaluation(model, x_test,task_y_test,2)
+            train_l,train_auroc,train_acc = evaluation(model, x_train,task_y_train,2)
             test_aurocs.append(test_auroc)
-            losses.append(l)
+            train_aurocs.append(train_auroc)
+            test_losses.append(test_l)
+            train_losses.append(train_l)
+            test_accs.append(test_acc)
+            train_accs.append(train_acc)
 
-        mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
-        test_aurocs = []
+        tasks_test_aurocs.append(test_aurocs[-1])
+        tasks_train_aurocs.append(train_aurocs[-1])
 
         model.add_task()
 
         if verbose:
             plt.figure()
-            plt.plot(losses)
-            plt.legend(['DEN'], loc='upper right')
+            plt.plot(train_losses)
+            plt.plot(test_losses)
+            plt.legend(['train loss','test loss'], loc='upper right')
             plt.xlabel("nb of epochs")
             plt.ylabel("loss")
-            losses = []
             plt.show(block=False)
 
+            plt.figure()
+            plt.plot(train_accs)
+            plt.plot(test_accs)
+            plt.legend(['train accuracy','test accuracy'], loc='upper right')
+            plt.xlabel("nb of epochs")
+            plt.ylabel("accuracy")
+            plt.show(block=False)
+
+        test_aurocs = []
+        train_aurocs = []
+        test_accs = []
+        train_accs = []
+        train_losses = []
+        test_losses = []
+
     plt.figure()
-    plt.plot(mean_auroc_test)
-    plt.legend(['DEN'], loc='upper right')
+    plt.plot(tasks_train_aurocs)
+    plt.plot(tasks_test_aurocs)
+    plt.legend(['DEN auroc train','DEN auroc test'], loc='upper right')
     plt.xlabel("Number of tasks")
     plt.ylabel("AUROC")
 
     plt.show(block=False)
+
 
