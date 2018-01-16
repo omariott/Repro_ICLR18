@@ -172,6 +172,9 @@ if __name__ == '__main__':
 #        model.sparsify(old_params_list)
 #        model.selective_retrain(x_train, y_train, loss, optim)
 
+        model.sparsify_thres()
+        print(model.sparsity())
+
         #evaluation of current model
         train_l,train_auroc = evaluation(model, x_train, y_train)
         test_l,test_auroc = evaluation(model, x_test, y_test)

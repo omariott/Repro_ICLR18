@@ -34,11 +34,16 @@ class DEN(nn.Module):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
+    def sparsify_thres(self, tau=0.01):
+        for i, l in enumerate(self.parameters()):
+            mask = l.data.abs() > tau
+            l.data *= mask.float()
+
     def sparsity(self):
         num = 0
         denom = 0
         for i, l in enumerate(self.parameters()):
-            num += (l != 0).sum().data[0]
+            num += (l == 0).float().sum().data[0]
             prod = 1
             for dim in l.size():
                 prod *= dim
@@ -118,7 +123,7 @@ class DEN(nn.Module):
                 optim.zero_grad()
                 l.backward()
                 optim.step()
-            l = mu* self.param_norm()
+            l = mu * self.param_norm()
             optim.zero_grad()
             l.backward()
             optim.step()
