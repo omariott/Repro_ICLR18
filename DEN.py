@@ -34,7 +34,7 @@ class DEN(nn.Module):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
-    def sparsify_thres(self, tau=0.01):
+    def sparsify_thres(self, tau=0.025):
         for i, l in enumerate(self.parameters()):
             mask = l.data.abs() > tau
             l.data *= mask.float()
@@ -144,7 +144,8 @@ class DEN(nn.Module):
             y_til = self.forward(x)[:,(self.num_tasks-1)]
             #loss and backward
             #print(F.sigmoid(y_til))
-            l = mu* self.param_norm() + loss(F.sigmoid(y_til),y)
+            l = mu * self.param_norm()
+            l += loss(F.sigmoid(y_til),y.float())
             optim.zero_grad()
             l.backward()
             optim.step()
@@ -156,10 +157,13 @@ class DEN(nn.Module):
         Retrain output layer
         """
         #Solving for output layer
-        output_optimizer = t.optim.SGD(self.layers[-1].parameters(), lr=0.1, weight_decay=0)
+        out_params = self.layers[-1].parameters()
+        output_optimizer = t.optim.SGD(out_params, lr=0.1, weight_decay=0)
         # train it
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, output_optimizer, p=1)
+            self.batch_pass(x_train, y_train, loss, output_optimizer, mu=0.1, p=1)
+        self.sparsify_thres()
+        print(self.sparsity())
         """
             perform BFS
         """
@@ -168,10 +172,10 @@ class DEN(nn.Module):
 
         # train subnetwork
 
-        """
+
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, p=2)
-        """
+
 
         self.unhook()
 

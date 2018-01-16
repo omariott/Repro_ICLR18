@@ -162,7 +162,7 @@ if __name__ == '__main__':
     test_aurocs = []
 
 
-#    model.selective_retrain(x_train, y_train, loss, optim)
+    model.selective_retrain(x_train, y_train, loss, optim)
 
     #training of model
     for e in range(epochs_nb):
@@ -170,7 +170,7 @@ if __name__ == '__main__':
 #        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
         model.batch_pass(x_train, y_train, loss, optim)
 #        model.sparsify(old_params_list)
-#        model.selective_retrain(x_train, y_train, loss, optim)
+        model.selective_retrain(x_train, y_train, loss, optim)
 
         model.sparsify_thres()
         print(model.sparsity())

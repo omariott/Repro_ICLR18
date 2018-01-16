@@ -121,7 +121,7 @@ if __name__ == '__main__':
     batch_size = 32
     eval_batch_size = 2048
     train_size = x_train.shape[0]
-    epochs_nb = 10
+    epochs_nb = 2
     cuda = False
     verbose = False
     #WARNING - Task specific
@@ -139,8 +139,6 @@ if __name__ == '__main__':
     #DNN model as presented in paper
     if is_DEN:
         model = DEN([784,500,500])
-        print(model)
-        print(model.depth)
     else:
         #WARNING NO LONGER WORKS
         model = baseDNN(input_dim, 2)
@@ -171,16 +169,22 @@ if __name__ == '__main__':
         task_y_test[y_test == task_nb] = 1
 
         #training of model on task
-        for e in range(epochs_nb):
-            print('epoch '+str(e))
-            model.batch_pass(x_train, task_y_train, loss, optim)
+        if(model.num_tasks == 1):
+            for e in range(epochs_nb):
+                print('epoch '+str(e))
+                model.batch_pass(x_train, task_y_train, loss, optim)
 
-            #evalution of auroc'score on test for this epoch
-            l,test_auroc = evaluation(model, x_test,task_y_test,2)
-            test_aurocs.append(test_auroc)
-            losses.append(l)
+                #evalution of auroc'score on test for this epoch
+                l,test_auroc = evaluation(model, x_test,task_y_test,2)
+                test_aurocs.append(test_auroc)
+                losses.append(l)
+        else:
+            model.selective_retrain(x_train, y_train, loss, optim, n_epochs=epochs_nb)
 
-        mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
+        """
+        À réparer !!!
+        """
+#        mean_auroc_test.append((test_aurocs[-1] + sum(mean_auroc_test))/(len(mean_auroc_test) + 1))
         test_aurocs = []
 
         model.add_task()
@@ -201,4 +205,3 @@ if __name__ == '__main__':
     plt.ylabel("AUROC")
 
     plt.show(block=False)
-
