@@ -128,7 +128,7 @@ class DEN(nn.Module):
 
 
 
-    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=1):
+    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10):
         """
             Retrain output layer
         """
@@ -139,7 +139,7 @@ class DEN(nn.Module):
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, output_optimizer, mu=0.1, p=1)
         self.sparsify_thres()
-        print(self.sparsity())
+#        print(self.sparsity())
         """
             perform BFS
         """
@@ -160,8 +160,8 @@ class DEN(nn.Module):
             train_accs.append(train_acc)
             train_losses.append(train_l)
 
-        helper.plot_curves([train_losses],'DEN','loss selec. retrain')
-        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain')
+        helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
+        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
 
 
         self.unhook()

@@ -118,9 +118,9 @@ def evaluation(model,loss,x_eval,y_eval,nb_class):
     acc = computeAccuracy(y_score,np_y_eval)
     return l/nb_iter,auroc,acc
 
-def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=False,filename='lonely_plot'):
+def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,filename='lonely_plot'):
     #data_lists must contain [train,test] or [train] values
-    plt.figure()
+    fig = plt.figure()
     for values in data_lists:
         plt.plot(range(1,len(values)+1), values)
     if len(data_lists) == 2:
@@ -131,7 +131,8 @@ def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot
     plt.ylabel(curve_type)
     if save_plot:
         fig.savefig(filename)
-    plt.show(block=False)
+    if display_plot:
+        plt.show(block=False)
 
 
 if __name__ == '__main__':
@@ -213,8 +214,8 @@ if __name__ == '__main__':
                 train_losses.append(train_l)
 
             if verbose:
-                plot_curves([train_losses,test_losses],'DEN','loss')
-                plot_curves([train_accs,test_accs],'DEN','accuracy')
+                plot_curves([train_losses,test_losses],'DEN','loss', filename="loss_task"+str(model.num_tasks))
+                plot_curves([train_accs,test_accs],'DEN','accuracy', filename="acc_task"+str(model.num_tasks))
 
             test_accs = []
             train_accs = []
@@ -233,4 +234,4 @@ if __name__ == '__main__':
 
         model.add_task()
 
-    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks')
+    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC")
