@@ -2,6 +2,7 @@ import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import main_task_decomposition as helper
 
 class DEN(nn.Module):
     def __init__(self, sizes):
@@ -104,31 +105,6 @@ class DEN(nn.Module):
             handle.remove()
         self.hook_handles = []
 
-    '''
-    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
-        #print(list(self.parameters()))
-        train_size = x_train.shape[0]
-        if(self.num_tasks != 1):
-            for i in range(train_size // batch_size):
-                #load batch
-                indsBatch = range(i * batch_size, (i+1) * batch_size)
-                x = Variable(x_train[indsBatch, :], requires_grad=False)
-                y = Variable(y_train[indsBatch], requires_grad=False)
-                if cuda: x,y = x.cuda(), y.cuda()
-
-                #forward
-                y_til = self.forward(x)
-                #loss and backward
-                l = loss(y_til,y)
-                optim.zero_grad()
-                l.backward()
-                optim.step()
-            l = mu * self.param_norm()
-            optim.zero_grad()
-            l.backward()
-            optim.step()
-    '''
-
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
         #incremental learning batch pass (output considered dependant on task)
         #print(list(self.parameters()))
@@ -172,8 +148,20 @@ class DEN(nn.Module):
         """
         #  train subnetwork
         """
+
+        #init book-keeping
+        train_losses = []
+        train_accs = []
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, p=2)
+
+            #eval network's loss and acc
+            train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2)
+            train_accs.append(train_acc)
+            train_losses.append(train_l)
+
+        helper.plot_curves([train_losses],'DEN','loss selec. retrain')
+        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain')
 
 
         self.unhook()

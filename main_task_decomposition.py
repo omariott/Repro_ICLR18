@@ -15,7 +15,7 @@ import _pickle as pickle
 import os.path
 import sklearn.metrics as metric
 
-from DEN import DEN
+import DEN as DEN_model
 
 class baseDNN(nn.Module):
 
@@ -95,7 +95,8 @@ def computeAccuracy(y_out, y_true):
     return accuracy
 
 
-def evaluation(model, x_eval,y_eval,nb_class):
+def evaluation(model,loss,x_eval,y_eval,nb_class):
+    eval_batch_size = 2048
     l = 0
     nb_iter = x_eval.shape[0]//eval_batch_size
     outputs = []
@@ -104,7 +105,6 @@ def evaluation(model, x_eval,y_eval,nb_class):
         indsBatch = range(k * eval_batch_size, (k+1) * eval_batch_size)
         x = Variable(x_eval[indsBatch, :], requires_grad=False)
         y = Variable(y_eval[indsBatch], requires_grad=False)
-        if cuda: x,y = x.cuda(), y.cuda()
 
         y_til = model(x)[:,(model.num_tasks-1)]
         out = F.sigmoid(y_til)
@@ -117,6 +117,22 @@ def evaluation(model, x_eval,y_eval,nb_class):
     auroc = metric.roc_auc_score(np_y_eval,y_score)
     acc = computeAccuracy(y_score,np_y_eval)
     return l/nb_iter,auroc,acc
+
+def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=False,filename='lonely_plot'):
+    #data_lists must contain [train,test] or [train] values
+    plt.figure()
+    for values in data_lists:
+        plt.plot(range(1,len(values)+1), values)
+    if len(data_lists) == 2:
+        plt.legend(['train '+curve_type,'test '+curve_type], loc='upper right')
+    else:#only train
+        plt.legend(['train '+curve_type], loc='upper right')
+    plt.xlabel(x_axis)
+    plt.ylabel(curve_type)
+    if save_plot:
+        fig.savefig(filename)
+    plt.show(block=False)
+
 
 if __name__ == '__main__':
     #trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
@@ -131,7 +147,6 @@ if __name__ == '__main__':
     #hyperparameters
     learning_rate = 0.01
     batch_size = 32
-    eval_batch_size = 2048
     train_size = x_train.shape[0]
     epochs_nb = 5
     cuda = False
@@ -150,7 +165,7 @@ if __name__ == '__main__':
 
     #DNN model as presented in paper
     if is_DEN:
-        model = DEN([784,500,500])
+        model = DEN_model.DEN([784,500,500])
     else:
         #WARNING NO LONGER WORKS
         model = baseDNN(input_dim, 2)
@@ -164,15 +179,13 @@ if __name__ == '__main__':
     optim = t.optim.SGD(model.parameters(), lr=learning_rate)
 
     #book keeping per task
-    test_aurocs = []
-    train_aurocs = []
     train_losses = []
     test_losses = []
     test_accs = []
     train_accs = []
     #overall book_keeping
-    tasks_test_aurocs = []
-    tasks_train_aurocs = []
+    test_aurocs = []
+    train_aurocs = []
 
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
@@ -187,65 +200,37 @@ if __name__ == '__main__':
 
         #training of model on task
         if(model.num_tasks == 1):
+
             for e in range(epochs_nb):
-#                print('epoch '+str(e))
+                #print('epoch '+str(e))
                 model.batch_pass(x_train, task_y_train, loss, optim)
+
+                test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
+                train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2)
+                test_accs.append(test_acc)
+                train_accs.append(train_acc)
+                test_losses.append(test_l)
+                train_losses.append(train_l)
+
+            if verbose:
+                plot_curves([train_losses,test_losses],'DEN','loss')
+                plot_curves([train_accs,test_accs],'DEN','accuracy')
+
+            test_accs = []
+            train_accs = []
+            train_losses = []
+            test_losses = []
+
+
         else:
-            model.selective_retrain(x_train, y_train, loss, optim, n_epochs=epochs_nb)
+            model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
 
-        """
-        À réparer !!!
-        """
-        for e in range(epochs_nb):
-#            print('epoch '+str(e))
-#            model.batch_pass(x_train, task_y_train, loss, optim)
-
-            #evaluation of auroc'score for this epoch
-            test_l,test_auroc,test_acc = evaluation(model, x_test,task_y_test,2)
-            train_l,train_auroc,train_acc = evaluation(model, x_train,task_y_train,2)
-            test_aurocs.append(test_auroc)
-            train_aurocs.append(train_auroc)
-            test_losses.append(test_l)
-            train_losses.append(train_l)
-            test_accs.append(test_acc)
-            train_accs.append(train_acc)
-
-        tasks_test_aurocs.append(test_aurocs[-1])
-        tasks_train_aurocs.append(train_aurocs[-1])
+        #evaluation of auroc'score
+        _,test_auroc,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
+        _,train_auroc,train_acc = evaluation(model, loss, x_train, task_y_train, 2)
+        test_aurocs.append(test_auroc)
+        train_aurocs.append(train_auroc)
 
         model.add_task()
 
-        if verbose:
-            plt.figure()
-            plt.plot(train_losses)
-            plt.plot(test_losses)
-            plt.legend(['train loss','test loss'], loc='upper right')
-            plt.xlabel("nb of epochs")
-            plt.ylabel("loss")
-            plt.show(block=False)
-#            fig.savefig("loss"+str(task_nb))
-
-            fig = plt.figure()
-            plt.plot(train_accs)
-            plt.plot(test_accs)
-            plt.legend(['train accuracy','test accuracy'], loc='upper right')
-            plt.xlabel("nb of epochs")
-            plt.ylabel("accuracy")
-            plt.show(block=False)
-#            fig.savefig("acc"+str(task_nb))
-
-        test_aurocs = []
-        train_aurocs = []
-        test_accs = []
-        train_accs = []
-        train_losses = []
-        test_losses = []
-
-    fig = plt.figure()
-    plt.plot(tasks_train_aurocs)
-    plt.plot(tasks_test_aurocs)
-    plt.legend(['DEN auroc train','DEN auroc test'], loc='upper right')
-    plt.xlabel("Number of tasks")
-    plt.ylabel("AUROC")
-    plt.show(block=False)
-#    fig.savefig("ROC")
+    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks')
