@@ -166,7 +166,7 @@ if __name__ == '__main__':
 
     #DNN model as presented in paper
     if is_DEN:
-        model = DEN_model.DEN([784,500,500])
+        model = DEN_model.DEN([784,200,100])
     else:
         #WARNING NO LONGER WORKS
         model = baseDNN(input_dim, 2)
@@ -198,6 +198,7 @@ if __name__ == '__main__':
         task_y_test.zero_()
         task_y_train[y_train == task_nb] = 1
         task_y_test[y_test == task_nb] = 1
+
 
         #training of model on task
         if(model.num_tasks == 1):
@@ -232,6 +233,8 @@ if __name__ == '__main__':
             model.dynamic_expansion(retrain_loss)
             #split
             model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+
+        print(model)
 
         #evaluation of auroc'score
         _,test_auroc,test_acc = evaluation(model, loss, x_test, task_y_test, 2)

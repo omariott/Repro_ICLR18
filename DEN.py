@@ -93,6 +93,14 @@ class DEN(nn.Module):
         new_layer = add_input_dim(old_layer, n_neurons)
         self.layers[l+1] = new_layer
 
+
+    def copy_neuron(self, layer_index, connections, bias):
+        # WARNING Probably kills cuda
+        # add neuron and copy connection weights
+        self.add_neurons(layer_index)
+        self.layers[layer_index].weight[-1].data = connections.data
+        self.layers[layer_index].bias[-1].data = bias.data
+
     def compute_hooks(self):
         current_layer = self.depth-1
         #mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
@@ -154,9 +162,9 @@ class DEN(nn.Module):
         # train it
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg=self.param_norm, args_reg=[1])
-        print(self.sparsity())
+#        print(self.sparsity())
         self.sparsify_thres()
-        print(self.sparsity())
+#        print(self.sparsity())
         """
             perform BFS
         """
@@ -234,8 +242,23 @@ class DEN(nn.Module):
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg=self.drift, args_reg=[old_params_list])
         # Compute connection-wise distance
-        # If distance > sigma, add old neuron to network
+        for num_layer,layer in enumerate(self.layers):
+            if(num_layer == self.depth-1):
+                break ##Exiting loop on output layer
+            old_layer = old_params_list[2*num_layer]
+            old_bias = old_params_list[2*num_layer+1]
+            old_shape = old_layer.shape
+            new_layer = layer.weight[:old_shape[0], :old_shape[1]]
+            new_bias = layer.bias[:old_shape[0]]
+            # If distance > sigma, add old neuron to network
+            for num_neuron, old_neuron in enumerate(old_layer):
+                connection_drift = (old_neuron - new_layer[num_neuron]).norm(2).data[0]
+                bias_drift = (old_bias[num_neuron] - new_bias[num_neuron]).norm(2).data[0]
+                if (connection_drift + bias_drift > sigma):
+                    self.copy_neuron(num_layer, old_neuron, old_bias[num_neuron])
         # Retrain
+        for i in range(n_epochs):
+            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg=self.drift, args_reg=[old_params_list])
         pass
 
 
