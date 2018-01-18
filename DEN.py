@@ -30,7 +30,23 @@ class DEN(nn.Module):
             norm += l.norm(p)
         return norm
 
-    def sparsify(self, old_params_list):
+
+    def drift(self, old_params_list):
+        norm = 0
+        cur_params_list = list(self.parameters())
+        for l1,l2 in zip(old_params_list, cur_params_list):
+            #Get old shape
+            old_shape = l1.shape
+            #extract new params according to shape
+            if len(old_shape) == 1:
+                new_layer = l2[:old_shape[0]]
+            else:
+                new_layer = l2[:old_shape[0], :old_shape[1]]
+            norm += (l1-new_layer).norm(2)
+        return norm
+
+
+    def sparsify_clip(self, old_params_list):
         for i, l in enumerate(self.parameters()):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
@@ -105,7 +121,7 @@ class DEN(nn.Module):
             handle.remove()
         self.hook_handles = []
 
-    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, p=2, batch_size=32, cuda=False):
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg=None, args_reg=None, cuda=False):
         #incremental learning batch pass (output considered dependant on task)
         #print(list(self.parameters()))
         train_size = x_train.shape[0]
@@ -120,15 +136,15 @@ class DEN(nn.Module):
             y_til = self.forward(x)[:,(self.num_tasks-1)]
             #loss and backward
             #print(F.sigmoid(y_til))
-            l = mu * self.param_norm()
-            l += loss(F.sigmoid(y_til),y.float())
+            l = loss(F.sigmoid(y_til),y.float())
+            if reg is not None:
+                l += mu * reg(*args_reg)
             optim.zero_grad()
             l.backward()
             optim.step()
 
 
-
-    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10):
+    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10, mu=0.1):
         """
             Retrain output layer
         """
@@ -137,9 +153,10 @@ class DEN(nn.Module):
         output_optimizer = t.optim.SGD(out_params, lr=0.1, weight_decay=0)
         # train it
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, output_optimizer, mu=0.1, p=1)
+            self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg=self.param_norm, args_reg=[1])
+        print(self.sparsity())
         self.sparsify_thres()
-#        print(self.sparsity())
+        print(self.sparsity())
         """
             perform BFS
         """
@@ -153,7 +170,7 @@ class DEN(nn.Module):
         train_losses = []
         train_accs = []
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, p=2)
+            self.batch_pass(x_train, y_train, loss, optimizer, reg=self.param_norm, args_reg=[2])
 
             #eval network's loss and acc
             train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2)
@@ -163,14 +180,14 @@ class DEN(nn.Module):
         helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
         helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
 
-
         self.unhook()
+        return train_losses[-1]
 
     def dynamic_expansion(self, loss, tau=0.02, n_epochs=10):
-    	pass
-    	'''
-    	#TODO FIGURE OUT NB NEURON TO ADD
-    	nb_add_neuron = 30
+        pass
+        """
+        #TODO FIGURE OUT NB NEURON TO ADD
+        nb_add_neuron = 30
         # Perform selective retraining and compute loss, or get it as param
         if (loss > tau):
             #add new units
@@ -206,14 +223,16 @@ class DEN(nn.Module):
                 optimizer = optim.SGD([l.weight,l.bias], lr=learning_rate, weight_decay=0)
                 for i in range(n_epochs):
                        self.batch_pass(x_train, y_train, loss, optimizer, p=1)
-	        #remove useless units among the added ones
-	        for l in self.layers:
-	        	pass
-	        	#TODO REMOVE USELESS UNITS
-		'''
+            #remove useless units among the added ones
+            for l in self.layers:
+                pass
+                #TODO REMOVE USELESS UNITS
+        """
 
-    def duplicate(self, sigma=.002):
-        # Retrain network once again ?
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.002, lambd=.1):
+        # Retrain network once again
+        for i in range(n_epochs):
+            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg=self.drift, args_reg=[old_params_list])
         # Compute connection-wise distance
         # If distance > sigma, add old neuron to network
         # Retrain

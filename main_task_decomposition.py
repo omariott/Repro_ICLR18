@@ -224,7 +224,14 @@ if __name__ == '__main__':
 
 
         else:
-            model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
+            #Saving parameters for network split/duplication
+            old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
+            #Selective retrain
+            retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
+            #Network expansion
+            model.dynamic_expansion(retrain_loss)
+            #split
+            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
 
         #evaluation of auroc'score
         _,test_auroc,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
