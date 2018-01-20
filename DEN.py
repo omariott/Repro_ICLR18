@@ -31,6 +31,15 @@ class DEN(nn.Module):
         return norm
 
 
+    def group_norm(self, p=2):
+        norm = 0
+        for l in self.layers:
+            in_features = l.in_features
+            coeff = in_features**(.5)
+            norm += l.weight.data.norm(p)
+        return norm
+
+
     def drift(self, old_params_list):
         norm = 0
         cur_params_list = list(self.parameters())

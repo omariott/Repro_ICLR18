@@ -118,7 +118,7 @@ def evaluation(model,loss,x_eval,y_eval,nb_class):
     acc = computeAccuracy(y_score,np_y_eval)
     return l/nb_iter,auroc,acc
 
-def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,filename='lonely_plot'):
+def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,savedir="./figures/",filename='lonely_plot'):
     #data_lists must contain [train,test] or [train] values
     fig = plt.figure()
     for values in data_lists:
@@ -130,7 +130,7 @@ def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot
     plt.xlabel(x_axis)
     plt.ylabel(curve_type)
     if save_plot:
-        fig.savefig(filename)
+        fig.savefig(savedir+filename)
     if display_plot:
         plt.show(block=False)
 
@@ -140,6 +140,9 @@ if __name__ == '__main__':
     #testDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_test.amat"
     trainDataFile = "mnist/mnist_train.amat"
     testDataFile = "mnist/mnist_test.amat"
+    savedir = "./figures"
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
 
     print('loading data...',end='',flush=True)
     x_train,y_train,x_test,y_test = load_data(trainDataFile, testDataFile)
@@ -205,7 +208,7 @@ if __name__ == '__main__':
 
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
-                model.batch_pass(x_train, task_y_train, loss, optim)
+                model.batch_pass(x_train, task_y_train, loss, optim, reg=model.param_norm, args_reg=[1])
 
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2)
@@ -234,7 +237,6 @@ if __name__ == '__main__':
             #split
             model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
 
-        print(model)
 
         #evaluation of auroc'score
         _,test_auroc,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
