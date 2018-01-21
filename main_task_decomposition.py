@@ -233,9 +233,9 @@ if __name__ == '__main__':
             #Selective retrain
             retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
             #Network expansion
-            model.dynamic_expansion(retrain_loss)
+            model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+            #model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
 
 
         #evaluation of auroc'score

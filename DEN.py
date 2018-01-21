@@ -89,7 +89,7 @@ class DEN(nn.Module):
     def add_neurons(self, l, n_neurons=1):
         # WARNING Probably kills cuda
         # add neurons to layer number l
-        if l > (self.depth - 2):
+        if l > (self.depth - 1):
             print("Error, trying to add neuron to output layer. Please use 'add_task' method instead")
             exit(-1)
         #add neurons to layer l
@@ -200,18 +200,19 @@ class DEN(nn.Module):
         self.unhook()
         return train_losses[-1]
 
-    def dynamic_expansion(self, loss, tau=0.02, n_epochs=10):
-        pass
-        """
+    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10):  
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 30
-        # Perform selective retraining and compute loss, or get it as param
-        if (loss > tau):
-            #add new units
-            for l in range(depth-1):
-                self.add_neurons(l,nb_add_neuron)
+        learning_rate = 0.1
 
-            #retrain network
+        #if given loss isn't low enough, expand network
+        if (retrain_loss > tau):
+
+            #add new units
+            for l in range(self.depth-1):
+                self.add_neurons(l,nb_add_neuron)
+            print(self)
+            #train newly added neurons
 
             #first register hook for each layer
             for i,l in enumerate(self.layers):
@@ -224,7 +225,7 @@ class DEN(nn.Module):
                 elif i == self.depth-1:
                     def my_hook(grad):
                         grad_clone = grad.clone()
-                        grad_clone[0,:-nb_add_neuron] = 0
+                        grad_clone[:,:-nb_add_neuron] = 0
                         return grad_clone
                 else: #hidden layers
                     def my_hook(grad):
@@ -237,14 +238,16 @@ class DEN(nn.Module):
 
             #train added neurons, layer per layer, with l1 norm for sparsity
             for l in self.layers:
-                optimizer = optim.SGD([l.weight,l.bias], lr=learning_rate, weight_decay=0)
+                optimizer = t.optim.SGD(l.parameters(), lr=learning_rate)
                 for i in range(n_epochs):
-                       self.batch_pass(x_train, y_train, loss, optimizer, p=1)
+                       self.batch_pass(x_train, y_train, loss, optimizer)
             #remove useless units among the added ones
             for l in self.layers:
                 pass
                 #TODO REMOVE USELESS UNITS
-        """
+        else:
+            print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
+        
 
     def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.002, lambd=.1):
         # Retrain network once again
