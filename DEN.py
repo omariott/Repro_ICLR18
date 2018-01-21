@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import main_task_decomposition as helper
+import numpy as np
 
 class DEN(nn.Module):
     def __init__(self, sizes):
@@ -66,16 +67,45 @@ class DEN(nn.Module):
             l.data *= mask.float()
 
     #sparsify part of a layer (according to given mask) and remove neurons with null incoming connections        
-    def sparsify_n_remove(self, layer, layer_params_masks, tau):
-        #sparsify layer
-        l_params = list(layer.parameters())
+    def sparsify_n_remove(self, nb_add_neurons,layer_ind, layer_params_masks, tau):
+
+        #step 1 sparsify layer (only new weights)
+        l_params = list(self.layers[layer_ind].parameters()) #returns [connections,biases]
         for i,weights in enumerate(l_params):
             sparsify_mask = weights.data.abs() > tau
-            #apply sparsify_mask only on given part of layer according to layer_params_masks
-            sparsify_mask[layer_params_masks[i]] = 1
+            #ignore sparsify (= set to 1) on old weights (which are = to 0 in layer_mask)
+            sparsify_mask[layer_params_masks[i] == 0] = 1
             weights.data *= sparsify_mask.float()
 
+        #step 2 remove useless neurons (only new neurons)
 
+        #keep index of all neurons we will keep, starting by old ones
+        old_nb_neurons = self.layers[layer_ind].out_features-nb_add_neurons
+        idx_kept_neurons = list(range(0,old_nb_neurons))
+        for i,n_connections in enumerate(l_params[0][old_nb_neurons:,:]):
+
+            #WARNING DO NOT TAKE BIASES INTO ACCOUNT
+
+            #if incoming weights of neurons are not all 0, keep it
+            if not (n_connections.data.abs().sum() == 0):
+                idx_kept_neurons.append(i)
+
+        idx_kept_neurons = t.LongTensor(idx_kept_neurons)
+
+        #creates new layer
+        new_layer = nn.Linear(self.layers[layer_ind].in_features,len(idx_kept_neurons))
+        new_layer.weight.data = t.index_select(l_params[0].data,0,idx_kept_neurons)
+        new_layer.bias.data = t.index_select(l_params[1].data,0,idx_kept_neurons)
+
+        #adapt layer n+1 to new layer
+        next_layer = nn.Linear(len(idx_kept_neurons),self.layers[layer_ind+1].out_features)
+        old_next_l_params = list(self.layers[layer_ind+1].parameters())
+
+        next_layer.weight.data = t.index_select(old_next_l_params[0].data,1,idx_kept_neurons)
+        next_layer.bias.data = old_next_l_params[1].data
+
+        self.layers[layer_ind] = new_layer
+        self.layers[layer_ind+1] = next_layer
 
     def sparsity(self):
         num = 0
@@ -214,7 +244,7 @@ class DEN(nn.Module):
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):  
         #TODO FIGURE OUT NB NEURON TO ADD
-        nb_add_neuron = 30
+        nb_add_neuron = 20
         learning_rate = 0.1
         sparse_thr = 0.01
 
@@ -224,7 +254,7 @@ class DEN(nn.Module):
             #add new units
             for l in range(self.depth-1):
                 self.add_neurons(l,nb_add_neuron)
-            print(self)
+            #print(self)
             #train newly added neurons
 
             #first register hook for each layer
@@ -256,28 +286,20 @@ class DEN(nn.Module):
                        self.batch_pass(x_train, y_train, loss, layer_optimizer, mu=mu, reg=self.param_norm, args_reg=[1])
             
             #sparsify, layer-wise
-            print(self.sparsity())
-            for i,l in enumerate(self.layers):
-                connections, biases = l.parameters()
-                print(connections.shape)
-                print(biases.shape)
+            for i in range(self.depth-1):
+                connections, biases = self.layers[i].parameters()
                 c_new_neurons_mask = t.ones(connections.shape).byte()
                 b_new_neurons_mask = t.ones(biases.shape).byte()
                 if i == 0:
                     c_new_neurons_mask[:-nb_add_neuron,:] = 0
                     b_new_neurons_mask[:-nb_add_neuron] = 0
 
-                elif i == self.depth-1:
-                    c_new_neurons_mask[:,:-nb_add_neuron] = 0
-                    b_new_neurons_mask.zero_()
-
                 else: #hidden layers
                     c_new_neurons_mask[:-nb_add_neuron,:-nb_add_neuron] = 0
                     b_new_neurons_mask[:-nb_add_neuron] = 0
 
-                self.sparsify_n_remove(l, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
+                self.sparsify_n_remove(nb_add_neuron, i, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
 
-            print(self.sparsity())
         else:
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
         
