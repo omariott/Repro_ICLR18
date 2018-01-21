@@ -65,6 +65,18 @@ class DEN(nn.Module):
             mask = l.data.abs() > tau
             l.data *= mask.float()
 
+    #sparsify part of a layer (according to given mask) and remove neurons with null incoming connections        
+    def sparsify_n_remove(self, layer, layer_params_masks, tau):
+        #sparsify layer
+        l_params = list(layer.parameters())
+        for i,weights in enumerate(l_params):
+            sparsify_mask = weights.data.abs() > tau
+            #apply sparsify_mask only on given part of layer according to layer_params_masks
+            sparsify_mask[layer_params_masks[i]] = 1
+            weights.data *= sparsify_mask.float()
+
+
+
     def sparsity(self):
         num = 0
         denom = 0
@@ -200,10 +212,11 @@ class DEN(nn.Module):
         self.unhook()
         return train_losses[-1]
 
-    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10):  
+    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):  
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 30
         learning_rate = 0.1
+        sparse_thr = 0.01
 
         #if given loss isn't low enough, expand network
         if (retrain_loss > tau):
@@ -238,13 +251,33 @@ class DEN(nn.Module):
 
             #train added neurons, layer per layer, with l1 norm for sparsity
             for l in self.layers:
-                optimizer = t.optim.SGD(l.parameters(), lr=learning_rate)
+                layer_optimizer = t.optim.SGD(l.parameters(), lr=learning_rate)
                 for i in range(n_epochs):
-                       self.batch_pass(x_train, y_train, loss, optimizer)
-            #remove useless units among the added ones
-            for l in self.layers:
-                pass
-                #TODO REMOVE USELESS UNITS
+                       self.batch_pass(x_train, y_train, loss, layer_optimizer, mu=mu, reg=self.param_norm, args_reg=[1])
+            
+            #sparsify, layer-wise
+            print(self.sparsity())
+            for i,l in enumerate(self.layers):
+                connections, biases = l.parameters()
+                print(connections.shape)
+                print(biases.shape)
+                c_new_neurons_mask = t.ones(connections.shape).byte()
+                b_new_neurons_mask = t.ones(biases.shape).byte()
+                if i == 0:
+                    c_new_neurons_mask[:-nb_add_neuron,:] = 0
+                    b_new_neurons_mask[:-nb_add_neuron] = 0
+
+                elif i == self.depth-1:
+                    c_new_neurons_mask[:,:-nb_add_neuron] = 0
+                    b_new_neurons_mask.zero_()
+
+                else: #hidden layers
+                    c_new_neurons_mask[:-nb_add_neuron,:-nb_add_neuron] = 0
+                    b_new_neurons_mask[:-nb_add_neuron] = 0
+
+                self.sparsify_n_remove(l, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
+
+            print(self.sparsity())
         else:
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
         
