@@ -95,7 +95,7 @@ def computeAccuracy(y_out, y_true):
     return accuracy
 
 
-def evaluation(model,loss,x_eval,y_eval,nb_class):
+def evaluation(model,loss,x_eval,y_eval,nb_class,use_cuda=False):
     eval_batch_size = 2048
     l = 0
     nb_iter = x_eval.shape[0]//eval_batch_size
@@ -106,14 +106,17 @@ def evaluation(model,loss,x_eval,y_eval,nb_class):
         x = Variable(x_eval[indsBatch, :], requires_grad=False)
         y = Variable(y_eval[indsBatch], requires_grad=False)
 
+        if use_cuda:
+            x,y = x.cuda(),y.cuda()
+
         y_til = model(x)[:,(model.num_tasks-1)]
         out = F.sigmoid(y_til)
         eval_loss = loss(out,y)
         outputs += [out]
         l += eval_loss.data[0]
 
-    np_y_eval = y_eval[0:eval_batch_size*nb_iter].int().numpy()
-    y_score = t.cat(outputs,0).data.numpy()
+    np_y_eval = y_eval[0:eval_batch_size*nb_iter].int().cpu().numpy()
+    y_score = t.cat(outputs,0).data.cpu().numpy()
     auroc = metric.roc_auc_score(np_y_eval,y_score)
     acc = computeAccuracy(y_score,np_y_eval)
     return l/nb_iter,auroc,acc
@@ -153,7 +156,7 @@ if __name__ == '__main__':
     batch_size = 32
     train_size = x_train.shape[0]
     epochs_nb = 5
-    cuda = False
+    cuda = True
     verbose = True
     #WARNING - Task specific
     input_dim = 784
@@ -169,7 +172,7 @@ if __name__ == '__main__':
 
     #DNN model as presented in paper
     if is_DEN:
-        model = DEN_model.DEN([784,200,100])
+        model = DEN_model.DEN([784,200,100],cuda=cuda)
     else:
         #WARNING NO LONGER WORKS
         model = baseDNN(input_dim, 2)
@@ -210,8 +213,8 @@ if __name__ == '__main__':
                 #print('epoch '+str(e))
                 model.batch_pass(x_train, task_y_train, loss, optim, reg=model.param_norm, args_reg=[1])
 
-                test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
-                train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2)
+                test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
+                train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
                 test_accs.append(test_acc)
                 train_accs.append(train_acc)
                 test_losses.append(test_l)
@@ -235,12 +238,12 @@ if __name__ == '__main__':
             #Network expansion
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+            #model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
 
 
         #evaluation of auroc'score
-        _,test_auroc,test_acc = evaluation(model, loss, x_test, task_y_test, 2)
-        _,train_auroc,train_acc = evaluation(model, loss, x_train, task_y_train, 2)
+        _,test_auroc,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
+        _,train_auroc,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
         test_aurocs.append(test_auroc)
         train_aurocs.append(train_auroc)
 

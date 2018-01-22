@@ -6,7 +6,7 @@ import main_task_decomposition as helper
 import numpy as np
 
 class DEN(nn.Module):
-    def __init__(self, sizes):
+    def __init__(self, sizes,cuda=False):
         super(DEN, self).__init__()
         self.depth = len(sizes)
         self.sizes = sizes
@@ -15,6 +15,8 @@ class DEN(nn.Module):
         self.w_hooks = [t.zeros(size) for size in sizes]
         self.b_hooks = [t.zeros(size) for size in sizes]
         self.hook_handles = []
+        self.use_cuda = cuda
+
 
     def forward(self, x):
             for i, linear in enumerate(self.layers):
@@ -74,7 +76,7 @@ class DEN(nn.Module):
         for i,weights in enumerate(l_params):
             sparsify_mask = weights.data.abs() > tau
             #ignore sparsify (= set to 1) on old weights (which are = to 0 in layer_mask)
-            sparsify_mask[layer_params_masks[i] == 0] = 1
+            sparsify_mask[layer_params_masks[i].cuda() == 0] = 1
             weights.data *= sparsify_mask.float()
 
         #step 2 remove useless neurons (only new neurons)
@@ -91,7 +93,7 @@ class DEN(nn.Module):
                 idx_kept_neurons.append(i)
 
         idx_kept_neurons = t.LongTensor(idx_kept_neurons)
-
+        if self.use_cuda: idx_kept_neurons = idx_kept_neurons.cuda()
         #creates new layer
         new_layer = nn.Linear(self.layers[layer_ind].in_features,len(idx_kept_neurons))
         new_layer.weight.data = t.index_select(l_params[0].data,0,idx_kept_neurons)
@@ -104,6 +106,7 @@ class DEN(nn.Module):
         next_layer.weight.data = t.index_select(old_next_l_params[0].data,1,idx_kept_neurons)
         next_layer.bias.data = old_next_l_params[1].data
 
+        if self.use_cuda: new_layer,next_layer = new_layer.cuda(),next_layer.cuda()
         self.layers[layer_ind] = new_layer
         self.layers[layer_ind+1] = next_layer
 
@@ -124,7 +127,7 @@ class DEN(nn.Module):
         self.num_tasks += 1
         #add output neuron
         old_output = self.layers[-1]
-        new_output = add_output_dim(old_output)
+        new_output = self.add_output_dim(old_output)
         self.layers[self.depth-1] = new_output
 
 
@@ -136,12 +139,12 @@ class DEN(nn.Module):
             exit(-1)
         #add neurons to layer l
         old_layer = self.layers[l]
-        new_layer = add_output_dim(old_layer, n_neurons)
+        new_layer = self.add_output_dim(old_layer, n_neurons)
         self.layers[l] = new_layer
 
         #add connections to layer l+1
         old_layer = self.layers[l+1]
-        new_layer = add_input_dim(old_layer, n_neurons)
+        new_layer = self.add_input_dim(old_layer, n_neurons)
         self.layers[l+1] = new_layer
 
 
@@ -164,9 +167,13 @@ class DEN(nn.Module):
             in_mask = t.zeros(input_size)
             for index, line in enumerate(connections):
                 if(out_mask[index] == 1):
-                    t.max(in_mask, (line != 0).float(), out=in_mask)
-            self.b_hooks[current_layer] = out_mask
-            self.w_hooks[current_layer] = t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0))
+                    t.max(in_mask, (line.cpu() != 0).float(), out=in_mask)
+            if self.use_cuda:
+                self.b_hooks[current_layer] = out_mask.cuda()
+                self.w_hooks[current_layer] = t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0)).cuda()
+            else:
+                self.b_hooks[current_layer] = out_mask
+                self.w_hooks[current_layer] = t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0))
             out_mask = in_mask
             current_layer -= 1
 
@@ -180,7 +187,7 @@ class DEN(nn.Module):
             handle.remove()
         self.hook_handles = []
 
-    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg=None, args_reg=None, cuda=False):
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg=None, args_reg=None):
         #incremental learning batch pass (output considered dependant on task)
         #print(list(self.parameters()))
         train_size = x_train.shape[0]
@@ -189,7 +196,7 @@ class DEN(nn.Module):
             indsBatch = range(i * batch_size, (i+1) * batch_size)
             x = Variable(x_train[indsBatch, :], requires_grad=False)
             y = Variable(y_train[indsBatch], requires_grad=False)
-            if cuda: x,y = x.cuda(), y.cuda()
+            if self.use_cuda: x,y = x.cuda(), y.cuda()
 
             #forward
             y_til = self.forward(x)[:,(self.num_tasks-1)]
@@ -232,7 +239,7 @@ class DEN(nn.Module):
             self.batch_pass(x_train, y_train, loss, optimizer, reg=self.param_norm, args_reg=[2])
 
             #eval network's loss and acc
-            train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2)
+            train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
             train_accs.append(train_acc)
             train_losses.append(train_l)
 
@@ -330,34 +337,36 @@ class DEN(nn.Module):
 
 
 
-def add_output_dim(old_layer, n_neurons=1):
-    """
-    adds neurons to a layer
-    """
-    # WARNING Probably kills cuda
-    input_dim, output_dim = old_layer.in_features, old_layer.out_features
-    if old_layer.bias is not None:
-        new_layer = nn.Linear(input_dim, output_dim + n_neurons)
-        new_layer.bias[:-n_neurons].data = old_layer.bias.data
-    else:
-        new_layer = nn.Linear(input_dim, output_dim + n_neurons, bias=False)
-    new_layer.weight[:-n_neurons].data = old_layer.weight.data
-    return new_layer
+    def add_output_dim(self, old_layer, n_neurons=1):
+        """
+        adds neurons to a layer
+        """
+        # WARNING Probably kills cuda
+        input_dim, output_dim = old_layer.in_features, old_layer.out_features
+        if old_layer.bias is not None:
+            new_layer = nn.Linear(input_dim, output_dim + n_neurons)
+            new_layer.bias[:-n_neurons].data = old_layer.bias.data
+        else:
+            new_layer = nn.Linear(input_dim, output_dim + n_neurons, bias=False)
+        new_layer.weight[:-n_neurons].data = old_layer.weight.data
+        if self.use_cuda: new_layer = new_layer.cuda()
+        return new_layer
 
 
-def add_input_dim(old_layer, n_neurons=1):
-    """
-    adds connections to a layer to accomodate
-    for new neurons in the previous layer
-    """
-    # WARNING Probably kills cuda
-    input_dim, output_dim = old_layer.in_features, old_layer.out_features
-    if old_layer.bias is not None:
-        new_layer = nn.Linear(input_dim + n_neurons, output_dim)
-    else:
-        new_layer = nn.Linear(input_dim + n_neurons, output_dim, bias=False)
-    new_layer.weight[:,:-n_neurons].data = old_layer.weight.data
-    return new_layer
+    def add_input_dim(self, old_layer, n_neurons=1):
+        """
+        adds connections to a layer to accomodate
+        for new neurons in the previous layer
+        """
+        # WARNING Probably kills cuda
+        input_dim, output_dim = old_layer.in_features, old_layer.out_features
+        if old_layer.bias is not None:
+            new_layer = nn.Linear(input_dim + n_neurons, output_dim)
+        else:
+            new_layer = nn.Linear(input_dim + n_neurons, output_dim, bias=False)
+        new_layer.weight[:,:-n_neurons].data = old_layer.weight.data
+        if self.use_cuda: new_layer = new_layer.cuda()
+        return new_layer
 
 
 def make_hook(hook):
