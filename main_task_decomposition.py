@@ -156,7 +156,7 @@ if __name__ == '__main__':
     batch_size = 32
     train_size = x_train.shape[0]
     epochs_nb = 5
-    cuda = True
+    cuda = False
     verbose = True
     #WARNING - Task specific
     input_dim = 784
@@ -238,7 +238,7 @@ if __name__ == '__main__':
             #Network expansion
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-            #model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
 
 
         #evaluation of auroc'score
@@ -247,6 +247,7 @@ if __name__ == '__main__':
         test_aurocs.append(test_auroc)
         train_aurocs.append(train_auroc)
 
+#        print(model.sizes_hist)
         model.add_task()
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC")
