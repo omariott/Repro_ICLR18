@@ -262,6 +262,7 @@ class DEN(nn.Module):
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):
+        #print('should be empty: ' + str(self.hook_handles))
 #        print("before")
 #        print(self)
         #TODO FIGURE OUT NB NEURON TO ADD
@@ -298,7 +299,8 @@ class DEN(nn.Module):
                         return grad_clone
 
                 #register hook to weight variable
-                l.weight.register_hook(my_hook)
+                self.hook_handles.append(l.weight.register_hook(my_hook))
+
 
             #train added neurons, layer per layer, with l1 norm for sparsity
             for nb_l,l in enumerate(self.layers):
@@ -315,7 +317,7 @@ class DEN(nn.Module):
                     #train_losses.append(train_l)
                 #helper.plot_curves([train_losses],'DEN','loss dyn. retrain', filename="loss_task"+str(self.num_tasks)+"layer: "+str(nb_l))
                 #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
-
+            self.unhook()
 
 
             #sparsify, layer-wise
