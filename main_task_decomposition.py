@@ -234,14 +234,17 @@ if __name__ == '__main__':
 
 
         else:
+            print("sparsity before: " + str(model.sparsity()))
             #Saving parameters for network split/duplication
-#            old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
+            old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
             #Selective retrain
             retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
+            print("sparsity after: " + str(model.sparsity()))
             #Network expansion
-            model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
+#            model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-#            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+        model.sparsify_thres()
 
 
         #evaluation of auroc'score
@@ -251,6 +254,7 @@ if __name__ == '__main__':
         train_aurocs.append(train_auroc)
         all_test_accs.append(test_acc)
         all_train_accs.append(train_acc)
+        print("sparsity: " + str(model.sparsity()))
         print("train_auroc: " + str(train_auroc))
         print("train_acc: " +  str(train_acc))
         print(model)

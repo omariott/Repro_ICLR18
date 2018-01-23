@@ -162,7 +162,7 @@ class DEN(nn.Module):
 
     def compute_hooks(self):
         current_layer = self.depth-1
-        #mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
+        # mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
         out_mask = t.zeros(self.num_tasks)
         out_mask[-1] = 1
         while(current_layer >= 0):
@@ -247,7 +247,7 @@ class DEN(nn.Module):
         train_losses = []
         train_accs = []
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, reg_list=[self.param_norm], args_reg=[[2]])
+            self.batch_pass(x_train, y_train, loss, optimizer, reg_list=[self.param_norm, self.param_norm], args_reg=[[2], [1]])
 
             #eval network's loss and acc
             train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
@@ -258,6 +258,7 @@ class DEN(nn.Module):
         helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
 
         self.unhook()
+        self.sparsify_thres()
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):
@@ -338,7 +339,7 @@ class DEN(nn.Module):
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
 
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=1, lambd=1): #sigma was .002
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=1, lambd=.1): #sigma was .002
         # Retrain network once again
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
