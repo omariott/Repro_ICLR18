@@ -19,35 +19,70 @@ import DEN as DEN_model
 
 class baseDNN(nn.Module):
 
-    def __init__(self,dim_x,dim_y,dim_h=100):
+    def __init__(self,sizes,mu=0.1,cuda=False):
         nn.Module.__init__(self)
+        self.depth = len(sizes)
+        self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) for i in range(self.depth-1)] + [nn.Linear(sizes[-1], 10)])
+        self.use_cuda = cuda
+        self.num_tasks = 1
 
-        self.f1 = nn.Linear(dim_x,dim_h)
-        self.f1.weight.data.uniform_(-0.1,0.1)
+    def add_task(self):
+        self.num_tasks += 1
 
-        self.f2 = nn.Linear(dim_h,dim_y)
-        self.f2.weight.data.uniform_(-0.1,0.1)
+    def param_norm(self, p=2):
+        norm = 0
+        for l in list(self.parameters()):
+            norm += l.norm(p)
+        return norm
 
-    def forward(self,x):
-        h_out = F.relu(self.f1(x))
-        out = self.f2(h_out)
+    def forward(self, x):
+        for i, linear in enumerate(self.layers):
+            if i<self.depth-1:
+                x = F.relu(linear(x))
+            else: #output layer
+                out = linear(x)
         return out
 
-    def batch_pass(self, x_train, y_train, loss, optim, batch_size=32, cuda=False):
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1,batch_size=32, reg_list=None, args_reg=None):
         for i in range(train_size // batch_size):
             #load batch
             indsBatch = range(i * batch_size, (i+1) * batch_size)
             x = Variable(x_train[indsBatch, :], requires_grad=False)
             y = Variable(y_train[indsBatch], requires_grad=False)
-            if cuda: x,y = x.cuda(), y.cuda()
+            if self.use_cuda: x,y = x.cuda(), y.cuda()
 
             #forward
-            y_til = self.forward(x)
+            y_til = self.forward(x)[:,(self.num_tasks-1)]
             #loss and backward
-            l = loss(y_til,y)
+            l = loss(F.sigmoid(y_til),y.float())
             optim.zero_grad()
             l.backward()
             optim.step()
+
+        optim.zero_grad()
+        #compute L2-norm
+        norm = 0
+        for l in list(self.parameters()):
+            norm += l.norm(2)
+        l = mu * norm
+        l.backward()
+        optim.step()
+
+    def sparsity(self):
+        num = 0
+        denom = 0
+        for i, l in enumerate(self.parameters()):
+            num += (l == 0).float().sum().data[0]
+            prod = 1
+            for dim in l.size():
+                prod *= dim
+            denom += prod
+        return num/denom
+
+    def sparsify_thres(self, tau=0.01):
+        for i, l in enumerate(self.parameters()):
+            mask = l.data.abs() > tau
+            l.data *= mask.float()
 
 def read_data(fname):
     f = open(fname)
@@ -168,14 +203,13 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    is_DEN = True
+    model_type = "DNN" # DEN | DNN 
 
     #DNN model as presented in paper
-    if is_DEN:
+    if model_type == "DEN":
         model = DEN_model.DEN([784,312,128],cuda=cuda)
-    else:
-        #WARNING NO LONGER WORKS
-        model = baseDNN(input_dim, 2)
+    else: #DNN
+        model = baseDNN([784,312,128],mu=0.1,cuda=cuda)
 
     loss = nn.BCELoss()
 
@@ -199,7 +233,7 @@ if __name__ == '__main__':
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(5):
+    for task_nb in range(10):
         print("task " + str(task_nb))
         #create mapping for binary classif in oneVSall fashion
         task_y_train.zero_()
@@ -209,7 +243,7 @@ if __name__ == '__main__':
 
 
         #training of model on task
-        if(model.num_tasks == 1):
+        if(model_type=="DNN" or model.num_tasks == 1):
             print(model.sparsity())
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
@@ -225,7 +259,7 @@ if __name__ == '__main__':
             if verbose:
                 plot_curves([train_losses,test_losses],'DEN','loss', filename="loss_task"+str(model.num_tasks))
                 plot_curves([train_accs,test_accs],'DEN','accuracy', filename="acc_task"+str(model.num_tasks))
-                
+
             test_accs = []
             train_accs = []
             train_losses = []
