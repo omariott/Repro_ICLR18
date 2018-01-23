@@ -9,7 +9,7 @@ class DEN(nn.Module):
     def __init__(self, sizes,cuda=False):
         super(DEN, self).__init__()
         self.depth = len(sizes)
-        self.sizes = sizes
+        self.sizes_hist = []
         self.num_tasks = 1
         self.layers = nn.ModuleList([nn.Linear(sizes[i], sizes[i+1]) for i in range(self.depth-1)] + [nn.Linear(sizes[-1], 1)])
         self.w_hooks = [t.zeros(size) for size in sizes]
@@ -68,15 +68,18 @@ class DEN(nn.Module):
             mask = l.data.abs() > tau
             l.data *= mask.float()
 
-    #sparsify part of a layer (according to given mask) and remove neurons with null incoming connections        
-    def sparsify_n_remove(self, nb_add_neurons,layer_ind, layer_params_masks, tau):
+    #sparsify part of a layer (according to given mask) and remove neurons with null incoming connections
+    def sparsify_n_remove(self, nb_add_neurons, layer_ind, layer_params_masks, tau):
 
         #step 1 sparsify layer (only new weights)
         l_params = list(self.layers[layer_ind].parameters()) #returns [connections,biases]
         for i,weights in enumerate(l_params):
             sparsify_mask = weights.data.abs() > tau
             #ignore sparsify (= set to 1) on old weights (which are = to 0 in layer_mask)
-            sparsify_mask[layer_params_masks[i].cuda() == 0] = 1
+            if(self.use_cuda):
+                sparsify_mask[layer_params_masks[i].cuda() == 0] = 1
+            else:
+                sparsify_mask[layer_params_masks[i] == 0] = 1
             weights.data *= sparsify_mask.float()
 
         #step 2 remove useless neurons (only new neurons)
@@ -125,6 +128,8 @@ class DEN(nn.Module):
     def add_task(self):
         # WARNING Probably kills cuda
         self.num_tasks += 1
+        #register sizes for inference
+        self.sizes_hist.append([l.in_features for l in self.layers])
         #add output neuron
         old_output = self.layers[-1]
         new_output = self.add_output_dim(old_output)
@@ -256,8 +261,8 @@ class DEN(nn.Module):
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):
-        print("before")
-        print(self) 
+#        print("before")
+#        print(self)
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 20
         learning_rate = 0.1
@@ -311,7 +316,7 @@ class DEN(nn.Module):
                 #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
 
 
-            
+
             #sparsify, layer-wise
             for i in range(self.depth-1):
                 connections, biases = self.layers[i].parameters()
@@ -326,14 +331,14 @@ class DEN(nn.Module):
                     b_new_neurons_mask[:-nb_add_neuron] = 0
 
                 self.sparsify_n_remove(nb_add_neuron, i, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
-            print("after")
-            print(self)
+#            print("after")
+#            print(self)
 
         else:
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
-        
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.002, lambd=.1):
+
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=1, lambd=1): #sigma was .002
         # Retrain network once again
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])

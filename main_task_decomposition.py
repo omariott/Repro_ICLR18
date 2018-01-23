@@ -203,7 +203,7 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    model_type = "DNN" # DEN | DNN 
+    model_type = "DEN" # DEN | DNN 
 
     #DNN model as presented in paper
     if model_type == "DEN":
@@ -244,7 +244,8 @@ if __name__ == '__main__':
 
         #training of model on task
         if(model_type=="DNN" or model.num_tasks == 1):
-            print(model.sparsity())
+
+            #print(model.sparsity())
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
                 model.batch_pass(x_train, task_y_train, loss, optim, reg_list=[model.param_norm], args_reg=[[1]])
@@ -264,18 +265,18 @@ if __name__ == '__main__':
             train_accs = []
             train_losses = []
             test_losses = []
-            print(model.sparsity())
+#            print(model.sparsity())
 
 
         else:
             #Saving parameters for network split/duplication
-            old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
+#            old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
             #Selective retrain
             retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
             #Network expansion
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-            #model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+#            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
 
 
         #evaluation of auroc'score
@@ -287,6 +288,8 @@ if __name__ == '__main__':
         all_train_accs.append(train_acc)
         print("train_auroc: " + str(train_auroc))
         print("train_acc: " +  str(train_acc))
+        print(model)
+
         model.add_task()
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC")
