@@ -39,7 +39,7 @@ class DEN(nn.Module):
         for l in self.layers:
             in_features = l.in_features
             coeff = in_features**(.5)
-            norm += l.weight.data.norm(p)
+            norm += l.weight.norm(p) * coeff
         return norm
 
 
@@ -192,7 +192,7 @@ class DEN(nn.Module):
             handle.remove()
         self.hook_handles = []
 
-    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg=None, args_reg=None):
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg_list=None, args_reg=None):
         #incremental learning batch pass (output considered dependant on task)
         #print(list(self.parameters()))
         train_size = x_train.shape[0]
@@ -208,9 +208,15 @@ class DEN(nn.Module):
             #loss and backward
             #print(F.sigmoid(y_til))
             l = loss(F.sigmoid(y_til),y.float())
-            if reg is not None:
-                l += mu * reg(*args_reg)
             optim.zero_grad()
+            l.backward()
+            optim.step()
+
+        if reg_list is not None:
+            optim.zero_grad()
+            l=0
+            for i,r in enumerate(reg_list):
+                l += mu * r(*args_reg[i])
             l.backward()
             optim.step()
 
@@ -224,7 +230,7 @@ class DEN(nn.Module):
         output_optimizer = t.optim.SGD(out_params, lr=0.1, weight_decay=0)
         # train it
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg=self.param_norm, args_reg=[1])
+            self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[1]])
 #        print(self.sparsity())
         self.sparsify_thres()
 #        print(self.sparsity())
@@ -241,7 +247,7 @@ class DEN(nn.Module):
         train_losses = []
         train_accs = []
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, reg=self.param_norm, args_reg=[2])
+            self.batch_pass(x_train, y_train, loss, optimizer, reg_list=[self.param_norm], args_reg=[[2]])
 
             #eval network's loss and acc
             train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
@@ -255,6 +261,8 @@ class DEN(nn.Module):
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):
+#        print("before")
+#        print(self) 
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 20
         learning_rate = 0.1
@@ -292,10 +300,22 @@ class DEN(nn.Module):
                 l.weight.register_hook(my_hook)
 
             #train added neurons, layer per layer, with l1 norm for sparsity
-            for l in self.layers:
+            for nb_l,l in enumerate(self.layers):
                 layer_optimizer = t.optim.SGD(l.parameters(), lr=learning_rate)
+                #init book-keeping
+                #train_losses = []
+                #train_accs = []
                 for i in range(n_epochs):
-                       self.batch_pass(x_train, y_train, loss, layer_optimizer, mu=mu, reg=self.param_norm, args_reg=[1])
+                    self.batch_pass(x_train, y_train, loss, layer_optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
+
+                    #eval network's loss and acc
+                    #train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
+                    #train_accs.append(train_acc)
+                    #train_losses.append(train_l)
+                #helper.plot_curves([train_losses],'DEN','loss dyn. retrain', filename="loss_task"+str(self.num_tasks)+"layer: "+str(nb_l))
+                #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
+
+
 
             #sparsify, layer-wise
             for i in range(self.depth-1):
@@ -311,6 +331,8 @@ class DEN(nn.Module):
                     b_new_neurons_mask[:-nb_add_neuron] = 0
 
                 self.sparsify_n_remove(nb_add_neuron, i, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
+            print("after")
+            print(self)
 
         else:
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
@@ -319,7 +341,7 @@ class DEN(nn.Module):
     def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.002, lambd=.1):
         # Retrain network once again
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg=self.drift, args_reg=[old_params_list])
+            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
         # Compute connection-wise distance
         for num_layer,layer in enumerate(self.layers):
             if(num_layer == self.depth-1):
@@ -337,7 +359,7 @@ class DEN(nn.Module):
                     self.copy_neuron(num_layer, old_neuron, old_bias[num_neuron])
         # Retrain
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg=self.drift, args_reg=[old_params_list])
+            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
         pass
 
 
