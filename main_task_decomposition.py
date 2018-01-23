@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
     #DNN model as presented in paper
     if is_DEN:
-        model = DEN_model.DEN([784,200,100],cuda=cuda)
+        model = DEN_model.DEN([784,312,128],cuda=cuda)
     else:
         #WARNING NO LONGER WORKS
         model = baseDNN(input_dim, 2)
@@ -193,11 +193,13 @@ if __name__ == '__main__':
     #overall book_keeping
     test_aurocs = []
     train_aurocs = []
+    all_train_accs = []
+    all_test_accs = []
 
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(4):
+    for task_nb in range(5):
         print("task " + str(task_nb))
         #create mapping for binary classif in oneVSall fashion
         task_y_train.zero_()
@@ -208,11 +210,11 @@ if __name__ == '__main__':
 
         #training of model on task
         if(model.num_tasks == 1):
-
+            print(model.sparsity())
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
-                model.batch_pass(x_train, task_y_train, loss, optim, reg=model.param_norm, args_reg=[1])
-
+                model.batch_pass(x_train, task_y_train, loss, optim, reg_list=[model.param_norm], args_reg=[[1]])
+                model.sparsify_thres()
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
                 test_accs.append(test_acc)
@@ -223,11 +225,12 @@ if __name__ == '__main__':
             if verbose:
                 plot_curves([train_losses,test_losses],'DEN','loss', filename="loss_task"+str(model.num_tasks))
                 plot_curves([train_accs,test_accs],'DEN','accuracy', filename="acc_task"+str(model.num_tasks))
-
+                
             test_accs = []
             train_accs = []
             train_losses = []
             test_losses = []
+            print(model.sparsity())
 
 
         else:
@@ -246,7 +249,11 @@ if __name__ == '__main__':
         _,train_auroc,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
         test_aurocs.append(test_auroc)
         train_aurocs.append(train_auroc)
-
+        all_test_accs.append(test_acc)
+        all_train_accs.append(train_acc)
+        print("train_auroc: " + str(train_auroc))
+        print("train_acc: " +  str(train_acc))
         model.add_task()
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC")
+    plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="ACCURACY_ALL")
