@@ -191,7 +191,7 @@ if __name__ == '__main__':
     batch_size = 32
     train_size = x_train.shape[0]
     epochs_nb = 5
-    cuda = True
+    cuda = False
     verbose = True
     #WARNING - Task specific
     input_dim = 784
@@ -203,7 +203,7 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    model_type = "DEN" # DEN | DNN 
+    model_type = "DEN" # DEN | DNN
 
     #DNN model as presented in paper
     if model_type == "DEN":
@@ -217,7 +217,6 @@ if __name__ == '__main__':
         model = model.cuda()
         loss = loss.cuda()
 
-    optim = t.optim.SGD(model.parameters(), lr=learning_rate)
 
     #book keeping per task
     train_losses = []
@@ -233,8 +232,10 @@ if __name__ == '__main__':
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(10):
+    for task_nb in range(4):
         print("task " + str(task_nb))
+        #build optim
+        optimizer = t.optim.SGD(model.parameters(), lr=learning_rate)
         #create mapping for binary classif in oneVSall fashion
         task_y_train.zero_()
         task_y_test.zero_()
@@ -248,7 +249,7 @@ if __name__ == '__main__':
             #print(model.sparsity())
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
-                model.batch_pass(x_train, task_y_train, loss, optim, reg_list=[model.param_norm], args_reg=[[1]])
+                model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[1]])
                 model.sparsify_thres()
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
@@ -273,12 +274,12 @@ if __name__ == '__main__':
             #Saving parameters for network split/duplication
             old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
             #Selective retrain
-            retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optim, n_epochs=epochs_nb)
+            retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optimizer, n_epochs=epochs_nb)
             print("sparsity after: " + str(model.sparsity()))
             #Network expansion
-#            model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
+            model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-            model.duplicate(x_train, task_y_train, loss, optim, old_params_list, n_epochs=epochs_nb)
+#            model.duplicate(x_train, task_y_train, loss, optimizer, old_params_list, n_epochs=epochs_nb)
         model.sparsify_thres()
 
 

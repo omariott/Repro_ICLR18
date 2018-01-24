@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import main_task_decomposition as helper
 import numpy as np
+import matplotlib.pyplot as plt
 
 class DEN(nn.Module):
     def __init__(self, sizes,cuda=False):
@@ -227,7 +228,7 @@ class DEN(nn.Module):
         """
         #Solving for output layer
         out_params = self.layers[-1].parameters()
-        output_optimizer = t.optim.SGD(out_params, lr=0.1, weight_decay=0)
+        output_optimizer = t.optim.SGD(out_params, lr=0.01, weight_decay=0)
         # train it
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[1]])
@@ -246,8 +247,9 @@ class DEN(nn.Module):
         #init book-keeping
         train_losses = []
         train_accs = []
+#        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, reg_list=[self.param_norm, self.param_norm], args_reg=[[2], [1]])
+            self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm, self.param_norm], args_reg=[[2], [1]])
 
             #eval network's loss and acc
             train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
@@ -261,13 +263,13 @@ class DEN(nn.Module):
         self.sparsify_thres()
         return train_losses[-1]
 
-    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):
+    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1): #tau was 0.02
         #print('should be empty: ' + str(self.hook_handles))
 #        print("before")
 #        print(self)
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 20
-        learning_rate = 0.1
+        learning_rate = 0.01
         sparse_thr = 0.01
 
         #if given loss isn't low enough, expand network
@@ -279,27 +281,36 @@ class DEN(nn.Module):
             #print(self)
             #train newly added neurons
 
+
             #first register hook for each layer
             for i,l in enumerate(self.layers):
                 #define hook depending on considered layer
                 if i == 0:
                     def my_hook(grad):
-                        grad_clone = grad.clone()
-                        grad_clone[:-nb_add_neuron,:] = 0
-                        return grad_clone
+                        grad[:-nb_add_neuron,:] = 0
+                        return grad
                 elif i == self.depth-1:
                     def my_hook(grad):
-                        grad_clone = grad.clone()
-                        grad_clone[:,:-nb_add_neuron] = 0
-                        return grad_clone
+                        grad[:,:-nb_add_neuron] = 0
+                        return grad
                 else: #hidden layers
                     def my_hook(grad):
-                        grad_clone = grad.clone()
-                        grad_clone[:-nb_add_neuron,:-nb_add_neuron] = 0
-                        return grad_clone
+                        grad[:-nb_add_neuron,:-nb_add_neuron] = 0
+                        return grad
 
                 #register hook to weight variable
                 self.hook_handles.append(l.weight.register_hook(my_hook))
+
+                #take care of bias
+                if i == self.depth-1:
+                    continue
+                else: #hidden layers
+                    def my_hook(grad):
+                        grad[:-nb_add_neuron] = 0
+                        return grad
+                #register hook to bias variable
+                self.hook_handles.append(l.bias.register_hook(my_hook))
+
 
 
             #train added neurons, layer per layer, with l1 norm for sparsity
@@ -318,6 +329,7 @@ class DEN(nn.Module):
                 #helper.plot_curves([train_losses],'DEN','loss dyn. retrain', filename="loss_task"+str(self.num_tasks)+"layer: "+str(nb_l))
                 #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
             self.unhook()
+#            self.sparsify_thres()
 
 
             #sparsify, layer-wise
@@ -343,6 +355,7 @@ class DEN(nn.Module):
 
     def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=1, lambd=.1): #sigma was .002
         # Retrain network once again
+        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
         # Compute connection-wise distance
@@ -372,14 +385,22 @@ class DEN(nn.Module):
         adds neurons to a layer
         """
         # WARNING Probably kills cuda
+#        old_mat = old_layer.weight.data
+
         input_dim, output_dim = old_layer.in_features, old_layer.out_features
         if old_layer.bias is not None:
             new_layer = nn.Linear(input_dim, output_dim + n_neurons)
-            new_layer.bias[:-n_neurons].data = old_layer.bias.data
+            new_layer.bias.data[:-n_neurons] = old_layer.bias.data
         else:
             new_layer = nn.Linear(input_dim, output_dim + n_neurons, bias=False)
-        new_layer.weight[:-n_neurons].data = old_layer.weight.data
+        new_layer.weight.data[:-n_neurons,:] = old_layer.weight.data
         if self.use_cuda: new_layer = new_layer.cuda()
+
+#        diff = old_mat - new_layer.weight.data[:-n_neurons]
+#        plt.imshow(diff.float().numpy(), cmap='hot')
+#        plt.colorbar()
+#        plt.show()
+
         return new_layer
 
 
@@ -394,7 +415,7 @@ class DEN(nn.Module):
             new_layer = nn.Linear(input_dim + n_neurons, output_dim)
         else:
             new_layer = nn.Linear(input_dim + n_neurons, output_dim, bias=False)
-        new_layer.weight[:,:-n_neurons].data = old_layer.weight.data
+        new_layer.weight.data[:,:-n_neurons] = old_layer.weight.data
         if self.use_cuda: new_layer = new_layer.cuda()
         return new_layer
 
