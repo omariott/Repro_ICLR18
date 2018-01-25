@@ -160,6 +160,7 @@ def evaluation(model,loss,x_eval,y_eval,nb_class,use_cuda=False):
 def overall_offline_evaluation(model, loss, x_eval,y_eval,use_cuda=False):
     eval_batch_size = 2048
     nb_tasks = model.num_tasks - 1
+    timestamped_models = [model.create_eval_model(t_idx) for t_idx in range(nb_tasks)]
     aurocs = np.zeros(nb_tasks)
     accs = np.zeros(nb_tasks)
     nb_iter = x_eval.shape[0]//eval_batch_size
@@ -173,9 +174,12 @@ def overall_offline_evaluation(model, loss, x_eval,y_eval,use_cuda=False):
         if use_cuda:
             x,y = x.cuda(),y.cuda()
 
-        y_til = model(x)
+        y_til = [model(x) for model in timestamped_models]
+
+#        y_til = model(x)
         for t_idx in range(nb_tasks):
-            out = F.sigmoid(y_til[:,t_idx])
+            y_til_t = y_til[t_idx]
+            out = F.sigmoid(y_til_t[:,t_idx])
             outputs[t_idx] += [out]
 
     task_y_eval = t.FloatTensor(y_eval.shape).zero_()
@@ -190,11 +194,6 @@ def overall_offline_evaluation(model, loss, x_eval,y_eval,use_cuda=False):
         accs[t_idx] = computeAccuracy(y_score,np_y_eval)
 
     return accs,aurocs
-
-
-
-
-
 
 
 
@@ -232,11 +231,11 @@ if __name__ == '__main__':
     print('done',flush=True)
 
     #hyperparameters
-    n_tasks = 5
+    n_tasks = 10
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 2
+    epochs_nb = 20
     cuda = False
     verbose = True
     #WARNING - Task specific

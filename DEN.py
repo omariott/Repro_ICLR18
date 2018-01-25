@@ -407,7 +407,19 @@ class DEN(nn.Module):
             old_shape_out, old_shape_in = old_params_list[2*num_layer].shape
             for index, n_index in enumerate(splits_index[num_layer]):
                 self.swap_neuron(num_layer, n_index, old_shape_out+index)
-        print("Done")
+
+
+    def create_eval_model(self, task_num):
+        inference_sizes = self.sizes_hist[task_num]
+        eval_model = DEN(inference_sizes, cuda=self.use_cuda)
+        for i in range(task_num):
+            eval_model.add_task()
+        for index_l, l in enumerate(eval_model.layers):
+            in_features = l.in_features
+            out_features = l.out_features
+            l.weight.data = self.layers[index_l].weight.data[:out_features,:in_features]
+            l.bias.data = self.layers[index_l].bias.data[:out_features]
+        return eval_model
 
 
 
