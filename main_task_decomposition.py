@@ -27,7 +27,7 @@ class baseDNN(nn.Module):
         self.num_tasks = 1
 
     def add_task(self):
-        self.num_tasks += 
+        self.num_tasks += 1
 
     def param_norm(self, p=2):
         norm = 0
@@ -155,6 +155,11 @@ def evaluation(model,loss,x_eval,y_eval,nb_class,use_cuda=False):
     auroc = metric.roc_auc_score(np_y_eval,y_score)
     acc = computeAccuracy(y_score,np_y_eval)
     return l/nb_iter,auroc,acc
+
+#evaluate our model for all learned tasks, after = learning is complete. y_eval is a 1D vector with values from 0 to task-1
+def overall_offline_evaluation(model, loss, x_eval,y_eval,use_cuda=False):
+    pass
+
 
 def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,savedir="./figures/",filename='lonely_plot',styles=None):
     #data_lists must contain [train,test] or [train] values
@@ -302,3 +307,7 @@ if __name__ == '__main__':
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC",styles=['--rv','--bs'])
     plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="ACCURACY_ALL")
+
+    #offline evaluation for all tasks
+    overall_offline_evaluation(model, loss, x_train, y_train, use_cuda=cuda)
+    overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
