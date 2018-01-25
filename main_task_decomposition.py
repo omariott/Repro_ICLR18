@@ -27,7 +27,7 @@ class baseDNN(nn.Module):
         self.num_tasks = 1
 
     def add_task(self):
-        self.num_tasks += 1
+        self.num_tasks += 
 
     def param_norm(self, p=2):
         norm = 0
@@ -156,11 +156,14 @@ def evaluation(model,loss,x_eval,y_eval,nb_class,use_cuda=False):
     acc = computeAccuracy(y_score,np_y_eval)
     return l/nb_iter,auroc,acc
 
-def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,savedir="./figures/",filename='lonely_plot'):
+def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,savedir="./figures/",filename='lonely_plot',styles=None):
     #data_lists must contain [train,test] or [train] values
     fig = plt.figure()
-    for values in data_lists:
-        plt.plot(range(1,len(values)+1), values)
+    for i,values in enumerate(data_lists):
+        if styles == None:
+            plt.plot(range(1,len(values)+1), values)
+        else:
+            plt.plot(range(1,len(values)+1), values,styles[i])
     if len(data_lists) == 2:
         plt.legend(['train '+curve_type,'test '+curve_type], loc='upper right')
     else:#only train
@@ -190,7 +193,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 5
+    epochs_nb = 1
     cuda = False
     verbose = True
     #WARNING - Task specific
@@ -279,7 +282,7 @@ if __name__ == '__main__':
             #Network expansion
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
-#            model.duplicate(x_train, task_y_train, loss, optimizer, old_params_list, n_epochs=epochs_nb)
+            model.duplicate(x_train, task_y_train, loss, optimizer, old_params_list, n_epochs=epochs_nb)
         model.sparsify_thres()
 
 
@@ -297,5 +300,5 @@ if __name__ == '__main__':
 
         model.add_task()
 
-    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC")
+    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC",styles=['--rv','--bs'])
     plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="ACCURACY_ALL")
