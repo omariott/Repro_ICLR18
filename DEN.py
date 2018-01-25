@@ -183,6 +183,26 @@ class DEN(nn.Module):
             out_mask = in_mask
             current_layer -= 1
 
+    def swap_neuron(self, layer, old_n, new_n):
+        #incomming weights
+        l = self.layers[layer]
+        #save weights
+        buff_w = l.weight.data[old_n]
+        buff_b = l.bias.data[old_n]
+        #copy new to old
+        l.weight.data[old_n] = l.weight.data[new_n]
+        l.bias.data[old_n] = l.bias.data[new_n]
+        #copy new to old
+        l.weight.data[new_n] = buff_w
+        l.bias.data[new_n] = buff_b
+        #outgoing weights
+        l = self.layers[layer+1]
+        buff_w = l.weight.data[:,old_n]
+        l.weight.data[:,old_n] = l.weight.data[:,new_n]
+        l.weight.data[:,new_n] = buff_w
+
+
+
     def register_hooks(self):
         for i, l in enumerate(self.layers):
             self.hook_handles.append(l.bias.register_hook(make_hook(self.b_hooks[i])))
@@ -269,7 +289,7 @@ class DEN(nn.Module):
 #        print(self)
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 20
-        learning_rate = 0.01
+        learning_rate = 0.1
         sparse_thr = 0.01
 
         #if given loss isn't low enough, expand network
@@ -353,13 +373,15 @@ class DEN(nn.Module):
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
 
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=1, lambd=.1): #sigma was .002
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=.2, lambd=.1): #sigma was .002
         # Retrain network once again
         optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
         # Compute connection-wise distance
+        splits_index = []
         for num_layer,layer in enumerate(self.layers):
+            splits = []
             if(num_layer == self.depth-1):
                 break ##Exiting loop on output layer
             old_layer = old_params_list[2*num_layer]
@@ -373,10 +395,19 @@ class DEN(nn.Module):
                 bias_drift = (old_bias[num_neuron] - new_bias[num_neuron]).norm(2).data[0]
                 if (connection_drift + bias_drift > sigma):
                     self.copy_neuron(num_layer, old_neuron, old_bias[num_neuron])
+                    splits.append(num_neuron)
+            splits_index.append(splits)
         # Retrain
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
-        pass
+        #Restore old neurons
+        for num_layer, layer in enumerate(self.layers):
+            if(num_layer == self.depth-1):
+                break ##Exiting loop on output layer
+            old_shape_out, old_shape_in = old_params_list[2*num_layer].shape
+            for index, n_index in enumerate(splits_index[num_layer]):
+                self.swap_neuron(num_layer, n_index, old_shape_out+index)
+        print("Done")
 
 
 

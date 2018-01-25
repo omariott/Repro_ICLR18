@@ -232,6 +232,7 @@ if __name__ == '__main__':
     print('done',flush=True)
 
     #hyperparameters
+    n_tasks = 5
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
@@ -277,7 +278,7 @@ if __name__ == '__main__':
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(10):
+    for task_nb in range(n_tasks):
         print("task " + str(task_nb))
         #build optim
         optimizer = t.optim.SGD(model.parameters(), lr=learning_rate)
@@ -315,12 +316,12 @@ if __name__ == '__main__':
 
 
         else:
-            print("sparsity before: " + str(model.sparsity()))
+#            print("sparsity before: " + str(model.sparsity()))
             #Saving parameters for network split/duplication
             old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
             #Selective retrain
             retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optimizer, n_epochs=epochs_nb)
-            print("sparsity after: " + str(model.sparsity()))
+#            print("sparsity after: " + str(model.sparsity()))
             #Network expansion
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
