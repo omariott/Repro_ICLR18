@@ -158,7 +158,44 @@ def evaluation(model,loss,x_eval,y_eval,nb_class,use_cuda=False):
 
 #evaluate our model for all learned tasks, after = learning is complete. y_eval is a 1D vector with values from 0 to task-1
 def overall_offline_evaluation(model, loss, x_eval,y_eval,use_cuda=False):
-    pass
+    eval_batch_size = 2048
+    nb_tasks = model.num_tasks - 1
+    aurocs = np.zeros(nb_tasks)
+    accs = np.zeros(nb_tasks)
+    nb_iter = x_eval.shape[0]//eval_batch_size
+    outputs = {t_idx:[] for t_idx in range(nb_tasks)}
+    for k in range(nb_iter):
+        #load batch
+        indsBatch = range(k * eval_batch_size, (k+1) * eval_batch_size)
+        x = Variable(x_eval[indsBatch, :], requires_grad=False)
+        y = Variable(y_eval[indsBatch], requires_grad=False)
+
+        if use_cuda:
+            x,y = x.cuda(),y.cuda()
+
+        y_til = model(x)
+        for t_idx in range(nb_tasks):
+            out = F.sigmoid(y_til[:,t_idx])
+            outputs[t_idx] += [out]
+
+    task_y_eval = t.FloatTensor(y_eval.shape).zero_()
+    for t_idx in range(nb_tasks):
+        #create mapping for binary classif in oneVSall fashion
+        task_y_eval.zero_()
+        task_y_eval[y_eval == t_idx] = 1
+
+        np_y_eval = task_y_eval[0:eval_batch_size*nb_iter].int().cpu().numpy()
+        y_score = t.cat(outputs[t_idx],0).data.cpu().numpy()
+        aurocs[t_idx] = metric.roc_auc_score(np_y_eval,y_score)
+        accs[t_idx] = computeAccuracy(y_score,np_y_eval)
+
+    return accs,aurocs
+
+
+
+
+
+
 
 
 def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,savedir="./figures/",filename='lonely_plot',styles=None):
@@ -198,7 +235,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 1
+    epochs_nb = 2
     cuda = False
     verbose = True
     #WARNING - Task specific
@@ -240,7 +277,7 @@ if __name__ == '__main__':
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(4):
+    for task_nb in range(10):
         print("task " + str(task_nb))
         #build optim
         optimizer = t.optim.SGD(model.parameters(), lr=learning_rate)
@@ -305,9 +342,12 @@ if __name__ == '__main__':
 
         model.add_task()
 
-    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="AUROC",styles=['--rv','--bs'])
-    plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="ACCURACY_ALL")
+    plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="online_auroc",styles=['--rv','--bs'])
+    plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="online_accuracy")
 
     #offline evaluation for all tasks
-    overall_offline_evaluation(model, loss, x_train, y_train, use_cuda=cuda)
-    overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
+    accs_train,aurocs_train = overall_offline_evaluation(model, loss, x_train, y_train, use_cuda=cuda)
+    accs_test,aurocs_test = overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
+
+    plot_curves([aurocs_train,aurocs_test],'DEN','auroc',x_axis='nb of tasks', filename="offline_auroc",styles=['--rv','--bs'])
+    plot_curves([accs_train,accs_test],'DEN','accuracy',x_axis='nb of tasks', filename="offline_accuracy")
