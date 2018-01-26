@@ -220,8 +220,11 @@ def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot
 if __name__ == '__main__':
     #trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
     #testDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_test.amat"
-    trainDataFile = "mnist/mnist_train.amat"
-    testDataFile = "mnist/mnist_test.amat"
+    #trainDataFile = "mnist/mnist_train.amat"
+    #testDataFile = "mnist/mnist_test.amat"
+    trainDataFile = "mnist_all_background_images_rotation_normalized_train_valid.amat"
+    testDataFile = "mnist_all_background_images_rotation_normalized_test.amat"
+
     savedir = "./figures"
     if not os.path.exists(savedir):
         os.makedirs(savedir)
@@ -231,11 +234,11 @@ if __name__ == '__main__':
     print('done',flush=True)
 
     #hyperparameters
-    n_tasks = 10
+    nb_tasks = 10
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 20
+    epochs_nb = 10
     cuda = False
     verbose = True
     #WARNING - Task specific
@@ -273,11 +276,12 @@ if __name__ == '__main__':
     train_aurocs = []
     all_train_accs = []
     all_test_accs = []
+    test_average_aurocs_task = []
 
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(n_tasks):
+    for task_nb in range(nb_tasks):
         print("task " + str(task_nb))
         #build optim
         optimizer = t.optim.SGD(model.parameters(), lr=learning_rate)
@@ -325,7 +329,6 @@ if __name__ == '__main__':
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
             model.duplicate(x_train, task_y_train, loss, optimizer, old_params_list, n_epochs=epochs_nb)
-        model.sparsify_thres()
 
 
         #evaluation of auroc'score
@@ -341,6 +344,9 @@ if __name__ == '__main__':
         print(model)
 
         model.add_task()
+        accs_test,aurocs_test = overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
+        test_average_aurocs_task.append(np.mean(aurocs_test))
+
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="online_auroc",styles=['--rv','--bs'])
     plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="online_accuracy")
@@ -351,3 +357,6 @@ if __name__ == '__main__':
 
     plot_curves([aurocs_train,aurocs_test],'DEN','auroc',x_axis='nb of tasks', filename="offline_auroc",styles=['--rv','--bs'])
     plot_curves([accs_train,accs_test],'DEN','accuracy',x_axis='nb of tasks', filename="offline_accuracy")
+
+    #WARNING THIS IS NOT TRAIN DIS IS TEST
+    plot_curves([test_average_aurocs_task],'DEN','auroc',x_axis='nb of tasks', filename="paper eval (test values, not train)",styles=['--rv'])
