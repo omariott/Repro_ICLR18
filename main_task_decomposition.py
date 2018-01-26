@@ -80,9 +80,7 @@ class baseDNN(nn.Module):
         return num/denom
 
     def sparsify_thres(self, tau=0.01):
-        for i, l in enumerate(self.parameters()):
-            mask = l.data.abs() > tau
-            l.data *= mask.float()
+        pass
 
 def read_data(fname):
     f = open(fname)
@@ -192,9 +190,7 @@ def overall_offline_evaluation(model, loss, x_eval,y_eval,use_cuda=False):
         y_score = t.cat(outputs[t_idx],0).data.cpu().numpy()
         aurocs[t_idx] = metric.roc_auc_score(np_y_eval,y_score)
         accs[t_idx] = computeAccuracy(y_score,np_y_eval)
-
     return accs,aurocs
-
 
 
 def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot=True,display_plot=False,savedir="./figures/",filename='lonely_plot',styles=None):
@@ -325,7 +321,8 @@ if __name__ == '__main__':
             model.dynamic_expansion(x_train, task_y_train, loss, retrain_loss, n_epochs=epochs_nb)
             #split
             model.duplicate(x_train, task_y_train, loss, optimizer, old_params_list, n_epochs=epochs_nb)
-        model.sparsify_thres()
+#        model.sparsify_thres()
+
 
 
         #evaluation of auroc'score

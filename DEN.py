@@ -180,6 +180,11 @@ class DEN(nn.Module):
             else:
                 self.b_hooks[current_layer] = out_mask
                 self.w_hooks[current_layer] = t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0))
+#            print("layer : \n",current_layer)
+#            print("in mask : \n", in_mask.numpy())
+#            print("out mask : \n", out_mask.numpy())
+#            print("hook : \n", t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0)).numpy())
+#            print("connections : \n", connections.numpy())
             out_mask = in_mask
             current_layer -= 1
 
@@ -248,7 +253,7 @@ class DEN(nn.Module):
         """
         #Solving for output layer
         out_params = self.layers[-1].parameters()
-        output_optimizer = t.optim.SGD(out_params, lr=0.01, weight_decay=0)
+        output_optimizer = t.optim.SGD(out_params, lr=0.01)
         # train it
         for i in range(n_epochs):
             self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[1]])
@@ -269,7 +274,7 @@ class DEN(nn.Module):
         train_accs = []
 #        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm, self.param_norm], args_reg=[[2], [1]])
+            self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[2]])
 
             #eval network's loss and acc
             train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
@@ -280,7 +285,7 @@ class DEN(nn.Module):
         helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
 
         self.unhook()
-        self.sparsify_thres()
+#        self.sparsify_thres()
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1): #tau was 0.02
@@ -465,6 +470,7 @@ class DEN(nn.Module):
 
 def make_hook(hook):
 #    print(hook.shape)
+#    print(hook.numpy())
     def hooker(grad):
 #        print(hook.shape, grad.shape)
         return grad * Variable(hook, requires_grad=False)
