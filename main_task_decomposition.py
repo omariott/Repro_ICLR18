@@ -35,6 +35,23 @@ class baseDNN(nn.Module):
             norm += l.norm(p)
         return norm
 
+    def drift(self, old_params_list):
+        norm = 0
+        cur_params_list = list(self.parameters())
+        for l1,l2 in zip(old_params_list, cur_params_list):
+            #Get old shape
+            old_shape = l1.shape
+            #extract new params according to shape
+            if len(old_shape) == 1:
+                new_layer = l2[:old_shape[0]]
+            else:
+                new_layer = l2[:old_shape[0], :old_shape[1]]
+            norm += (l1-new_layer).norm(2)
+        return norm
+
+    def create_eval_model(self, task_num):
+        return self
+
     def forward(self, x):
         for i, linear in enumerate(self.layers):
             if i<self.depth-1:
@@ -60,11 +77,9 @@ class baseDNN(nn.Module):
             optim.step()
 
         optim.zero_grad()
-        #compute L2-norm
-        norm = 0
-        for l in list(self.parameters()):
-            norm += l.norm(2)
-        l = mu * norm
+        l=0
+        for i,r in enumerate(reg_list):
+            l += mu * r(*args_reg[i])
         l.backward()
         optim.step()
 
@@ -216,8 +231,11 @@ def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot
 if __name__ == '__main__':
     #trainDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_train_valid.amat"
     #testDataFile = "mnist_rotation_new/mnist_all_rotation_normalized_float_test.amat"
-    trainDataFile = "mnist/mnist_train.amat"
-    testDataFile = "mnist/mnist_test.amat"
+    #trainDataFile = "mnist/mnist_train.amat"
+    #testDataFile = "mnist/mnist_test.amat"
+    trainDataFile = "mnist_all_background_images_rotation_normalized_train_valid.amat"
+    testDataFile = "mnist_all_background_images_rotation_normalized_test.amat"
+
     savedir = "./figures"
     if not os.path.exists(savedir):
         os.makedirs(savedir)
@@ -227,7 +245,7 @@ if __name__ == '__main__':
     print('done',flush=True)
 
     #hyperparameters
-    n_tasks = 10
+    nb_tasks = 10
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
@@ -244,12 +262,12 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    model_type = "DEN" # DEN | DNN
+    model_type = "DEN" # DEN | DNN | DNN-L2
 
     #DNN model as presented in paper
     if model_type == "DEN":
         model = DEN_model.DEN([784,312,128],cuda=cuda)
-    else: #DNN
+    else: #DNN or DNN-L2
         model = baseDNN([784,312,128],mu=0.1,cuda=cuda)
 
     loss = nn.BCELoss()
@@ -269,11 +287,12 @@ if __name__ == '__main__':
     train_aurocs = []
     all_train_accs = []
     all_test_accs = []
+    test_average_aurocs_task = []
 
     #training of binary model for each task from 1 to T
     task_y_train = t.FloatTensor(y_train.shape).zero_()
     task_y_test = t.FloatTensor(y_test.shape).zero_()
-    for task_nb in range(n_tasks):
+    for task_nb in range(nb_tasks):
         print("task " + str(task_nb))
         #build optim
         optimizer = t.optim.SGD(model.parameters(), lr=learning_rate)
@@ -283,21 +302,30 @@ if __name__ == '__main__':
         task_y_train[y_train == task_nb] = 1
         task_y_test[y_test == task_nb] = 1
 
+        #Saving parameters for network split/duplication or DNN-L2 drift reg.
+        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
 
         #training of model on task
-        if(model_type=="DNN" or model.num_tasks == 1):
+        if(model_type != "DEN" or model.num_tasks == 1):
             old_l = float('inf')
 
             #print(model.sparsity())
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
-                l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[1]])
-                #Early stopping
-                if(old_l - l < 0):
-                    print("First train : ", e)
-                    break
-                old_l = l
-                model.sparsify_thres()
+                if model_type == "DEN":
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[1]])
+                    #Early stopping
+                    if(old_l - l < 0):
+                        print("First train : ", e)
+                        break
+                    old_l = l
+                    model.sparsify_thres()
+                elif model_type == "DNN":
+                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
+                elif model_type == "DNN-L2":
+                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
+        #Restore old neurons)
+
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
                 test_accs.append(test_acc)
@@ -341,6 +369,9 @@ if __name__ == '__main__':
         print(model)
 
         model.add_task()
+        accs_test,aurocs_test = overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
+        test_average_aurocs_task.append(np.mean(aurocs_test))
+
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="online_auroc",styles=['--rv','--bs'])
     plot_curves([all_train_accs,all_test_accs],'DEN','accuracy',x_axis='nb of tasks', filename="online_accuracy")
@@ -351,3 +382,6 @@ if __name__ == '__main__':
 
     plot_curves([aurocs_train,aurocs_test],'DEN','auroc',x_axis='nb of tasks', filename="offline_auroc",styles=['--rv','--bs'])
     plot_curves([accs_train,accs_test],'DEN','accuracy',x_axis='nb of tasks', filename="offline_accuracy")
+
+    #WARNING THIS IS NOT TRAIN DIS IS TEST
+    plot_curves([test_average_aurocs_task],'DEN','auroc',x_axis='nb of tasks', filename="paper eval (test values, not train)",styles=['--rv'])

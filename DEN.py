@@ -369,26 +369,26 @@ class DEN(nn.Module):
 
 
 
-            #train added neurons, layer per layer, with l1 norm for sparsity
-            for nb_l,l in enumerate(self.layers):
-                layer_optimizer = t.optim.SGD(l.parameters(), lr=learning_rate)
-                #init book-keeping
-                #train_losses = []
-                #train_accs = []
-                old_l = float('inf')
-                for e in range(n_epochs):
-                    l = self.batch_pass(x_train, y_train, loss, layer_optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])            #Early stopping
-                    if(old_l - l < 1e-3):
-                        print("NE : ", e)
-                        break
-                    old_l = l
+            #train added neurons with l1 norm for sparsity
+            optimizer = t.optim.SGD(self.parameters(), lr=learning_rate)
+            #init book-keeping
+            #train_losses = []
+            #train_accs = []
+            old_l = float('inf')
+            for i in range(n_epochs):
+                self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
+                #Early stopping
+                if(old_l - l < 1e-3):
+                    print("NE : ", e)
+                    break
+                old_l = l
 
-                    #eval network's loss and acc
-                    #train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
-                    #train_accs.append(train_acc)
-                    #train_losses.append(train_l)
-                #helper.plot_curves([train_losses],'DEN','loss dyn. retrain', filename="loss_task"+str(self.num_tasks)+"layer: "+str(nb_l))
-                #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
+                #eval network's loss and acc
+                #train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
+                #train_accs.append(train_acc)
+                #train_losses.append(train_l)
+            #helper.plot_curves([train_losses],'DEN','loss dyn. retrain', filename="loss_task"+str(self.num_tasks))
+            #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
             self.unhook()
 #            self.sparsify_thres()
 
