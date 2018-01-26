@@ -35,6 +35,23 @@ class baseDNN(nn.Module):
             norm += l.norm(p)
         return norm
 
+    def drift(self, old_params_list):
+        norm = 0
+        cur_params_list = list(self.parameters())
+        for l1,l2 in zip(old_params_list, cur_params_list):
+            #Get old shape
+            old_shape = l1.shape
+            #extract new params according to shape
+            if len(old_shape) == 1:
+                new_layer = l2[:old_shape[0]]
+            else:
+                new_layer = l2[:old_shape[0], :old_shape[1]]
+            norm += (l1-new_layer).norm(2)
+        return norm
+
+    def create_eval_model(self, task_num):
+        return self
+
     def forward(self, x):
         for i, linear in enumerate(self.layers):
             if i<self.depth-1:
@@ -60,11 +77,9 @@ class baseDNN(nn.Module):
             optim.step()
 
         optim.zero_grad()
-        #compute L2-norm
-        norm = 0
-        for l in list(self.parameters()):
-            norm += l.norm(2)
-        l = mu * norm
+        l=0
+        for i,r in enumerate(reg_list):
+            l += mu * r(*args_reg[i])
         l.backward()
         optim.step()
 
@@ -234,7 +249,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 10
+    epochs_nb = 2
     cuda = False
     verbose = True
     #WARNING - Task specific
@@ -247,12 +262,12 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    model_type = "DEN" # DEN | DNN
+    model_type = "DEN" # DEN | DNN | DNN-L2
 
     #DNN model as presented in paper
     if model_type == "DEN":
         model = DEN_model.DEN([784,312,128],cuda=cuda)
-    else: #DNN
+    else: #DNN or DNN-L2
         model = baseDNN([784,312,128],mu=0.1,cuda=cuda)
 
     loss = nn.BCELoss()
@@ -287,15 +302,24 @@ if __name__ == '__main__':
         task_y_train[y_train == task_nb] = 1
         task_y_test[y_test == task_nb] = 1
 
+        #Saving parameters for network split/duplication or DNN-L2 drift reg.
+        old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
 
         #training of model on task
-        if(model_type=="DNN" or model.num_tasks == 1):
+        if(model_type != "DEN" or model.num_tasks == 1):
 
             #print(model.sparsity())
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
-                model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[1]])
-                model.sparsify_thres()
+                if model_type == "DEN":
+                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[1]])
+                    model.sparsify_thres()
+                elif model_type == "DNN":
+                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
+                elif model_type == "DNN-L2":
+                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
+        #Restore old neurons)
+
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
                 test_accs.append(test_acc)
@@ -316,8 +340,6 @@ if __name__ == '__main__':
 
         else:
 #            print("sparsity before: " + str(model.sparsity()))
-            #Saving parameters for network split/duplication
-            old_params_list = [Variable(w.data.clone(), requires_grad=False) for w in model.parameters()]
             #Selective retrain
             retrain_loss = model.selective_retrain(x_train, task_y_train, loss, optimizer, n_epochs=epochs_nb)
 #            print("sparsity after: " + str(model.sparsity()))
