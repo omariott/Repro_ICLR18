@@ -316,7 +316,7 @@ if __name__ == '__main__':
                     l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=.1, reg_list=[model.param_norm], args_reg=[[1]])
                     #Early stopping
                     if(old_l - l < 0):
-                        print("First train : ", e)
+                        print("First train:", e,"epochs")
                         break
                     old_l = l
                     model.sparsify_thres()
@@ -364,8 +364,10 @@ if __name__ == '__main__':
         all_train_accs.append(train_acc)
         print("sparsity: " + str(model.sparsity()))
         print("train_auroc: " + str(train_auroc))
+        print("test_auroc: " + str(test_auroc))
         print("train_acc: " +  str(train_acc))
         print(model)
+        print("\n##################################\n")
 
         model.add_task()
         accs_test,aurocs_test = overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)

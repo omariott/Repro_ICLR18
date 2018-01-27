@@ -303,8 +303,8 @@ class DEN(nn.Module):
         for e in range(n_epochs):
             l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[2]])
             #Early stopping
-            if(old_l - l < 1e-3):
-                print("SR : ", e)
+            if(old_l - l < 0):
+                print("SR:", e,"epochs")
                 break
             old_l = l
             #eval network's loss and acc
@@ -312,8 +312,8 @@ class DEN(nn.Module):
             train_accs.append(train_acc)
             train_losses.append(train_l)
 
-        helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
-        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
+#        helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
+#        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
 
         self.unhook()
 #        self.sparsify_thres()
@@ -325,7 +325,7 @@ class DEN(nn.Module):
 #        print(self)
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 20
-        learning_rate = 0.1
+        learning_rate = 0.01
         sparse_thr = 0.01
 
         #if given loss isn't low enough, expand network
@@ -378,8 +378,8 @@ class DEN(nn.Module):
             for e in range(n_epochs):
                 l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
                 #Early stopping
-                if(old_l - l < 1e-3):
-                    print("NE : ", e)
+                if(old_l - l < 0):
+                    print("NE:", e,"epochs")
                     break
                 old_l = l
 
@@ -411,19 +411,21 @@ class DEN(nn.Module):
 #            print(self)
 
         else:
-            print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
+            print("loss:" + str(retrain_loss) + ",low enough, dynamic_expansion not required")
 
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=.2, lambd=1): #sigma was .002
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.2, lambd=.1): #sigma was .002
         # Retrain network once again
         optimizer = t.optim.SGD(self.parameters(), lr=0.01)
+
         old_l = float('inf')
         for e in range(n_epochs):
             l = self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
-            if(old_l - l < 1e-3):
-                print("Split1 : ", e)
+            if(old_l - l < 0):
+                print("Split1:", e,"epochs")
                 break
             old_l = l
+
         # Compute connection-wise distance
         splits_index = []
         for num_layer,layer in enumerate(self.layers):
@@ -443,14 +445,17 @@ class DEN(nn.Module):
                     self.copy_neuron(num_layer, old_neuron, old_bias[num_neuron])
                     splits.append(num_neuron)
             splits_index.append(splits)
+
         # Retrain
+        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         old_l = float('inf')
         for e in range(n_epochs):
             l = self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
-            if(old_l - l < 1e-3):
-                print("Split2 : ", e)
+            if(old_l - l < 0):
+                print("Split2:", e,"epochs")
                 break
             old_l = l
+        """
         #Restore old neurons
         for num_layer, layer in enumerate(self.layers):
             if(num_layer == self.depth-1):
@@ -459,7 +464,7 @@ class DEN(nn.Module):
             for index, n_index in enumerate(splits_index[num_layer]):
                 self.swap_neuron(num_layer, n_index, old_shape_out+index)
 
-
+        """
     def create_eval_model(self, task_num):
         inference_sizes = self.sizes_hist[task_num]
         eval_model = DEN(inference_sizes, cuda=self.use_cuda)
