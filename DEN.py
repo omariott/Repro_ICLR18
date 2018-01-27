@@ -64,7 +64,7 @@ class DEN(nn.Module):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
-    def sparsify_thres(self, tau=1e-4):
+    def sparsify_thres(self, tau=1e-2):
         for i, l in enumerate(self.parameters()):
             mask = l.data.abs() > tau
             l.data *= mask.float()
@@ -273,7 +273,7 @@ class DEN(nn.Module):
             l += loss(F.sigmoid(y_til),y.float())/batch_size
         return l.data[0]
 
-    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10, mu=0.1):
+    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10, mu=.1):
         """
             Retrain output layer
         """
@@ -375,8 +375,8 @@ class DEN(nn.Module):
             #train_losses = []
             #train_accs = []
             old_l = float('inf')
-            for i in range(n_epochs):
-                self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
+            for e in range(n_epochs):
+                l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
                 #Early stopping
                 if(old_l - l < 1e-3):
                     print("NE : ", e)
@@ -414,7 +414,7 @@ class DEN(nn.Module):
             print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
 
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=.2, lambd=.1): #sigma was .002
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=.2, lambd=1): #sigma was .002
         # Retrain network once again
         optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         old_l = float('inf')

@@ -313,7 +313,7 @@ if __name__ == '__main__':
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
                 if model_type == "DEN":
-                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[1]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=.1, reg_list=[model.param_norm], args_reg=[[1]])
                     #Early stopping
                     if(old_l - l < 0):
                         print("First train : ", e)
@@ -324,7 +324,6 @@ if __name__ == '__main__':
                     model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
                 elif model_type == "DNN-L2":
                     model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
-        #Restore old neurons)
 
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
