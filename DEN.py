@@ -64,7 +64,7 @@ class DEN(nn.Module):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
-    def sparsify_thres(self, tau=0.01):
+    def sparsify_thres(self, tau=1e-2):
         for i, l in enumerate(self.parameters()):
             mask = l.data.abs() > tau
             l.data *= mask.float()
@@ -221,7 +221,10 @@ class DEN(nn.Module):
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg_list=None, args_reg=None):
         #incremental learning batch pass (output considered dependant on task)
         #print(list(self.parameters()))
-        train_size = x_train.shape[0]
+        set_size = x_train.shape[0]
+        split = 5/6
+        train_size = int(set_size * split)
+        val_size = set_size - train_size
         for i in range(train_size // batch_size):
             #load batch
             indsBatch = range(i * batch_size, (i+1) * batch_size)
@@ -234,9 +237,17 @@ class DEN(nn.Module):
             #loss and backward
             #print(F.sigmoid(y_til))
             l = loss(F.sigmoid(y_til),y.float())
+            """
+            if reg_list is not None:
+                for i,r in enumerate(reg_list):
+                    l += mu * r(*args_reg[i])
+            """
             optim.zero_grad()
             l.backward()
             optim.step()
+
+
+        start_val = (i+1) * batch_size
 
         if reg_list is not None:
             optim.zero_grad()
@@ -247,7 +258,22 @@ class DEN(nn.Module):
             optim.step()
 
 
-    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10, mu=0.1):
+        l = 0
+        for i in range(val_size // batch_size):
+            #load batch
+            indsBatch = range(start_val + i * batch_size, start_val + (i+1) * batch_size)
+            x = Variable(x_train[indsBatch, :], requires_grad=False)
+            y = Variable(y_train[indsBatch], requires_grad=False)
+            if self.use_cuda: x,y = x.cuda(), y.cuda()
+
+            #forward
+            y_til = self.forward(x)[:,(self.num_tasks-1)]
+            #loss and backward
+            #print(F.sigmoid(y_til))
+            l += loss(F.sigmoid(y_til),y.float())/batch_size
+        return l.data[0]
+
+    def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10, mu=.1):
         """
             Retrain output layer
         """
@@ -273,16 +299,21 @@ class DEN(nn.Module):
         train_losses = []
         train_accs = []
 #        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
-        for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[2]])
-
+        old_l = float('inf')
+        for e in range(n_epochs):
+            l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[2]])
+            #Early stopping
+            if(old_l - l < 0):
+                print("SR:", e,"epochs")
+                break
+            old_l = l
             #eval network's loss and acc
             train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
             train_accs.append(train_acc)
             train_losses.append(train_l)
 
-        helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
-        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
+#        helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
+#        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
 
         self.unhook()
 #        self.sparsify_thres()
@@ -294,7 +325,7 @@ class DEN(nn.Module):
 #        print(self)
         #TODO FIGURE OUT NB NEURON TO ADD
         nb_add_neuron = 20
-        learning_rate = 0.1
+        learning_rate = 0.01
         sparse_thr = 0.01
 
         #if given loss isn't low enough, expand network
@@ -343,8 +374,14 @@ class DEN(nn.Module):
             #init book-keeping
             #train_losses = []
             #train_accs = []
-            for i in range(n_epochs):
-                self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
+            old_l = float('inf')
+            for e in range(n_epochs):
+                l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
+                #Early stopping
+                if(old_l - l < 0):
+                    print("NE:", e,"epochs")
+                    break
+                old_l = l
 
                 #eval network's loss and acc
                 #train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
@@ -374,14 +411,21 @@ class DEN(nn.Module):
 #            print(self)
 
         else:
-            print("loss: " + str(retrain_loss) + ",low enough, dynamic_expansion not required")
+            print("loss:" + str(retrain_loss) + ",low enough, dynamic_expansion not required")
 
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=2, sigma=.2, lambd=.1): #sigma was .002
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.2, lambd=.1): #sigma was .002
         # Retrain network once again
         optimizer = t.optim.SGD(self.parameters(), lr=0.01)
-        for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
+
+        old_l = float('inf')
+        for e in range(n_epochs):
+            l = self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
+            if(old_l - l < 0):
+                print("Split1:", e,"epochs")
+                break
+            old_l = l
+
         # Compute connection-wise distance
         splits_index = []
         for num_layer,layer in enumerate(self.layers):
@@ -401,9 +445,17 @@ class DEN(nn.Module):
                     self.copy_neuron(num_layer, old_neuron, old_bias[num_neuron])
                     splits.append(num_neuron)
             splits_index.append(splits)
+
         # Retrain
-        for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
+        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
+        old_l = float('inf')
+        for e in range(n_epochs):
+            l = self.batch_pass(x_train, y_train, loss, optimizer, mu=lambd, reg_list=[self.drift], args_reg=[[old_params_list]])
+            if(old_l - l < 0):
+                print("Split2:", e,"epochs")
+                break
+            old_l = l
+        """
         #Restore old neurons
         for num_layer, layer in enumerate(self.layers):
             if(num_layer == self.depth-1):
@@ -412,7 +464,7 @@ class DEN(nn.Module):
             for index, n_index in enumerate(splits_index[num_layer]):
                 self.swap_neuron(num_layer, n_index, old_shape_out+index)
 
-
+        """
     def create_eval_model(self, task_num):
         inference_sizes = self.sizes_hist[task_num]
         eval_model = DEN(inference_sizes, cuda=self.use_cuda)
