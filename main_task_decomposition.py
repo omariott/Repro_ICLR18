@@ -29,7 +29,7 @@ class DNN_STL(nn.Module):
         if self.num_tasks < 11: self.models[self.num_tasks-1].num_tasks = self.num_tasks
 
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1,batch_size=32, reg_list=None, args_reg=None):
-        self.models[self.num_tasks-1].batch_pass(x_train, y_train, loss, optim, mu, batch_size, reg_list, args_reg)
+        return self.models[self.num_tasks-1].batch_pass(x_train, y_train, loss, optim, mu, batch_size, reg_list, args_reg)
 
     def forward(self, x):
         return self.models[self.num_tasks-1].forward(x)
@@ -93,6 +93,11 @@ class baseDNN(nn.Module):
         return out
 
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1,batch_size=32, reg_list=None, args_reg=None):
+        set_size = x_train.shape[0]
+        split = 5/6
+        train_size = int(set_size * split)
+        val_size = set_size - train_size
+
         for i in range(train_size // batch_size):
             #load batch
             indsBatch = range(i * batch_size, (i+1) * batch_size)
@@ -114,6 +119,24 @@ class baseDNN(nn.Module):
             l += mu * r(*args_reg[i])
         l.backward()
         optim.step()
+
+        start_val = (i+1) * batch_size
+
+        l = 0
+        for i in range(val_size // batch_size):
+            #load batch
+            indsBatch = range(start_val + i * batch_size, start_val + (i+1) * batch_size)
+            x = Variable(x_train[indsBatch, :], requires_grad=False)
+            y = Variable(y_train[indsBatch], requires_grad=False)
+            if self.use_cuda: x,y = x.cuda(), y.cuda()
+
+            #forward
+            y_til = self.forward(x)[:,(self.num_tasks-1)]
+            #loss and backward
+            #print(F.sigmoid(y_til))
+            l += loss(F.sigmoid(y_til),y.float())/batch_size
+        print(l.data[0])
+        return l.data[0]
 
     def sparsity(self):
         num = 0
@@ -281,7 +304,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 20
+    epochs_nb = 200
     cuda = False
     verbose = True
     #WARNING - Task specific
@@ -348,19 +371,19 @@ if __name__ == '__main__':
                 #print('epoch '+str(e))
                 if model_type == "DEN":
                     l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=.1, reg_list=[model.param_norm], args_reg=[[1]])
-                    #Early stopping
-                    if(old_l - l < 0):
-                        print("First train:", e,"epochs")
-                        break
-                    old_l = l
                     model.sparsify_thres()
                 elif model_type == "DNN":
-                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
                 elif model_type == "DNN-L2":
-                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
                 elif model_type == "DNN-STL":
-                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
 
+                #Early stopping
+                if(old_l - l < 0):
+                    print("First train:", e,"epochs")
+                    break
+                old_l = l
 
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
