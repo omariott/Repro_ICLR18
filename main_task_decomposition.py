@@ -135,7 +135,6 @@ class baseDNN(nn.Module):
             #loss and backward
             #print(F.sigmoid(y_til))
             l += loss(F.sigmoid(y_til),y.float())/batch_size
-        print(l.data[0])
         return l.data[0]
 
     def sparsity(self):
@@ -317,7 +316,7 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    model_type = "DNN-STL" # DEN | DNN | DNN-L2 | DNN-STL
+    model_type = "DEN" # DEN | DNN | DNN-L2 | DNN-STL
 
     #DNN model as presented in paper
     if model_type == "DEN":
@@ -370,7 +369,7 @@ if __name__ == '__main__':
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
                 if model_type == "DEN":
-                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=.1, reg_list=[model.param_norm], args_reg=[[1]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=0.01, reg_list=[model.param_norm], args_reg=[[1]])
                     model.sparsify_thres()
                 elif model_type == "DNN":
                     l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
@@ -432,7 +431,9 @@ if __name__ == '__main__':
         model.add_task()
         accs_test,aurocs_test = overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
         test_average_aurocs_task.append(np.mean(aurocs_test))
-        pickle.dump(test_average_aurocs_task, open(str(model_type)+'_paper_eval_data.p', 'wb'))
+    
+    #save paper results
+    pickle.dump(test_average_aurocs_task, open(str(model_type)+'_paper_eval_data.p', 'wb'))
 
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="online_auroc",styles=['--rv','--bs'])

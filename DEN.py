@@ -320,11 +320,7 @@ class DEN(nn.Module):
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1): #tau was 0.02
-        #print('should be empty: ' + str(self.hook_handles))
-#        print("before")
-#        print(self)
-        #TODO FIGURE OUT NB NEURON TO ADD
-        nb_add_neuron = 20
+        nb_add_neuron = 10
         learning_rate = 0.01
         sparse_thr = 0.01
 
