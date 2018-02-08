@@ -29,6 +29,9 @@ class DEN(nn.Module):
 
 
     def param_norm(self, p=2):
+        """
+        Computes l-p norm of parameters
+        """
         norm = 0
         for l in list(self.parameters()):
             norm += l.norm(p)
@@ -36,6 +39,9 @@ class DEN(nn.Module):
 
 
     def group_norm(self, p=2):
+        """
+        Computes group norm for group regularization
+        """
         norm = 0
         for l in self.layers:
             in_features = l.in_features
@@ -45,6 +51,9 @@ class DEN(nn.Module):
 
 
     def drift(self, old_params_list):
+        """
+        Computes drift from parameters at previous steps
+        """
         norm = 0
         cur_params_list = list(self.parameters())
         for l1,l2 in zip(old_params_list, cur_params_list):
@@ -60,18 +69,25 @@ class DEN(nn.Module):
 
 
     def sparsify_clip(self, old_params_list):
+    """
+    Sparsify network with gradient cliping technique
+    """
         for i, l in enumerate(self.parameters()):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
     def sparsify_thres(self, tau=1e-2):
+    """
+    Sparsify network according to threshold tau
+    """
         for i, l in enumerate(self.parameters()):
             mask = l.data.abs() > tau
             l.data *= mask.float()
 
-    #sparsify part of a layer (according to given mask) and remove neurons with null incoming connections
     def sparsify_n_remove(self, nb_add_neurons, layer_ind, layer_params_masks, tau):
-
+    """
+    Sparsify part of a layer (according to given mask) and remove neurons with null incoming connections
+    """
         #step 1 sparsify layer (only new weights)
         l_params = list(self.layers[layer_ind].parameters()) #returns [connections,biases]
         for i,weights in enumerate(l_params):
@@ -115,6 +131,9 @@ class DEN(nn.Module):
         self.layers[layer_ind+1] = next_layer
 
     def sparsity(self):
+    """
+    Computes sparsity of network (proportion of zeroed parameters)
+    """
         num = 0
         denom = 0
         for i, l in enumerate(self.parameters()):
@@ -127,6 +146,9 @@ class DEN(nn.Module):
 
 
     def add_task(self):
+    """
+    Adds a new output neuron to the network
+    """
         # WARNING Probably kills cuda
         self.num_tasks += 1
         #register sizes for inference
@@ -138,7 +160,10 @@ class DEN(nn.Module):
 
 
     def add_neurons(self, l, n_neurons=1):
-        # WARNING Probably kills cuda
+    """
+    Adds n_neurons new neuros to layer l of the network
+    Used during dynamic expansion
+    """
         # add neurons to layer number l
         if l > (self.depth - 1):
             print("Error, trying to add neuron to output layer. Please use 'add_task' method instead")
@@ -155,13 +180,19 @@ class DEN(nn.Module):
 
 
     def copy_neuron(self, layer_index, connections, bias):
-        # WARNING Probably kills cuda
+    """
+    creates a duplicate of a neuron
+    used during network duplication
+    """
         # add neuron and copy connection weights
         self.add_neurons(layer_index)
         self.layers[layer_index].weight[-1].data = connections.data
         self.layers[layer_index].bias[-1].data = bias.data
 
     def compute_hooks(self):
+    """
+    creates backwar hooks for training specific neurons
+    """
         current_layer = self.depth-1
         # mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
         out_mask = t.zeros(self.num_tasks)
@@ -180,15 +211,13 @@ class DEN(nn.Module):
             else:
                 self.b_hooks[current_layer] = out_mask
                 self.w_hooks[current_layer] = t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0))
-#            print("layer : \n",current_layer)
-#            print("in mask : \n", in_mask.numpy())
-#            print("out mask : \n", out_mask.numpy())
-#            print("hook : \n", t.mm(out_mask.unsqueeze(1), in_mask.unsqueeze(0)).numpy())
-#            print("connections : \n", connections.numpy())
             out_mask = in_mask
             current_layer -= 1
 
     def swap_neuron(self, layer, old_n, new_n):
+    """
+    swaps the positions of two neurons
+    """
         #incomming weights
         l = self.layers[layer]
         #save weights
@@ -209,18 +238,23 @@ class DEN(nn.Module):
 
 
     def register_hooks(self):
+    """
+    registers bacward hooks for next training session
+    """
         for i, l in enumerate(self.layers):
             self.hook_handles.append(l.bias.register_hook(make_hook(self.b_hooks[i])))
             self.hook_handles.append(l.weight.register_hook(make_hook(self.w_hooks[i])))
 
     def unhook(self):
+    """
+    removes backward hooks
+    """
         for handle in self.hook_handles:
             handle.remove()
         self.hook_handles = []
 
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1, batch_size=32, reg_list=None, args_reg=None):
         #incremental learning batch pass (output considered dependant on task)
-        #print(list(self.parameters()))
         set_size = x_train.shape[0]
         split = 5/6
         train_size = int(set_size * split)
@@ -235,7 +269,6 @@ class DEN(nn.Module):
             #forward
             y_til = self.forward(x)[:,(self.num_tasks-1)]
             #loss and backward
-            #print(F.sigmoid(y_til))
             l = loss(F.sigmoid(y_til),y.float())
             """
             if reg_list is not None:
@@ -269,18 +302,13 @@ class DEN(nn.Module):
             #forward
             y_til = self.forward(x)[:,(self.num_tasks-1)]
             #loss and backward
-            #print(F.sigmoid(y_til))
             l += loss(F.sigmoid(y_til),y.float())/batch_size
         return l.data[0]
 
     def selective_retrain(self, x_train, y_train, loss, optimizer, n_epochs=10, mu=.1):
-        """
-            Retrain output layer
-        """
-        #Solving for output layer
+        # Retrain output layer
         out_params = self.layers[-1].parameters()
         output_optimizer = t.optim.SGD(out_params, lr=0.01)
-        # train it
         old_l = float('inf')
         for e in range(n_epochs):
             l = self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[1]])
@@ -289,22 +317,17 @@ class DEN(nn.Module):
                 print("SR_last:", e,"epochs")
                 break
             old_l = l
-#        print(self.sparsity())
         self.sparsify_thres()
-#        print(self.sparsity())
-        """
-            perform BFS
-        """
+        # perform BFS
         self.compute_hooks()
         self.register_hooks()
-        """
-        #  train subnetwork
-        """
 
+
+
+        # train subnetwork
         #init book-keeping
         train_losses = []
         train_accs = []
-#        optimizer = t.optim.SGD(self.parameters(), lr=0.01)
         old_l = float('inf')
         for e in range(n_epochs):
             l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[2]])
@@ -318,11 +341,7 @@ class DEN(nn.Module):
             train_accs.append(train_acc)
             train_losses.append(train_l)
 
-#        helper.plot_curves([train_losses],'DEN','loss selec. retrain', filename="loss_task"+str(self.num_tasks))
-#        helper.plot_curves([train_accs],'DEN','accuracy selec. retrain', filename="acc_task"+str(self.num_tasks))
-
         self.unhook()
-#        self.sparsify_thres()
         return train_losses[-1]
 
     def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1): #tau was 0.02
@@ -336,7 +355,6 @@ class DEN(nn.Module):
             #add new units
             for l in range(self.depth-1):
                 self.add_neurons(l,nb_add_neuron)
-            #print(self)
             #train newly added neurons
 
 
@@ -373,9 +391,6 @@ class DEN(nn.Module):
 
             #train added neurons with l1 norm for sparsity
             optimizer = t.optim.SGD(self.parameters(), lr=learning_rate)
-            #init book-keeping
-            #train_losses = []
-            #train_accs = []
             old_l = float('inf')
             for e in range(n_epochs):
                 l = self.batch_pass(x_train, y_train, loss, optimizer, mu=mu, reg_list=[self.group_norm,self.param_norm], args_reg=[[2],[1]])
@@ -384,15 +399,7 @@ class DEN(nn.Module):
                     print("NE:", e,"epochs")
                     break
                 old_l = l
-
-                #eval network's loss and acc
-                #train_l,_,train_acc = helper.evaluation(self, loss, x_train, y_train, 2,use_cuda=self.use_cuda)
-                #train_accs.append(train_acc)
-                #train_losses.append(train_l)
-            #helper.plot_curves([train_losses],'DEN','loss dyn. retrain', filename="loss_task"+str(self.num_tasks))
-            #helper.plot_curves([train_accs],'DEN','accuracy dyn. retrain', filename="acc_task"+str(self.num_tasks))
             self.unhook()
-#            self.sparsify_thres()
 
 
             #sparsify, layer-wise
@@ -409,8 +416,8 @@ class DEN(nn.Module):
                     b_new_neurons_mask[:-nb_add_neuron] = 0
 
                 self.sparsify_n_remove(nb_add_neuron, i, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
-#            print("after")
-#            print(self)
+
+
 
         else:
             print("loss:" + str(retrain_loss) + ",low enough, dynamic_expansion not required")
@@ -457,6 +464,7 @@ class DEN(nn.Module):
                 print("Split2:", e,"epochs")
                 break
             old_l = l
+        # Obselete : Real algo doesn't use this
         """
         #Restore old neurons
         for num_layer, layer in enumerate(self.layers):
@@ -467,7 +475,11 @@ class DEN(nn.Module):
                 self.swap_neuron(num_layer, n_index, old_shape_out+index)
 
         """
+
     def create_eval_model(self, task_num):
+    """
+    creates truncated models according to timestamps for evaluation
+    """
         inference_sizes = self.sizes_hist[task_num]
         eval_model = DEN(inference_sizes, cuda=self.use_cuda)
         for i in range(task_num):
@@ -485,7 +497,6 @@ class DEN(nn.Module):
         """
         adds neurons to a layer
         """
-        # WARNING Probably kills cuda
 #        old_mat = old_layer.weight.data
 
         input_dim, output_dim = old_layer.in_features, old_layer.out_features
@@ -522,10 +533,9 @@ class DEN(nn.Module):
 
 
 def make_hook(hook):
-#    print(hook.shape)
-#    print(hook.numpy())
+    """
+    create a hook to be registered
+    """
     def hooker(grad):
-#        print(hook.shape, grad.shape)
-        return grad * Variable(hook, requires_grad=False)
-#    print("hooked)
+        return grad * Variable(hook, requires_grad=False)$
     return hooker
