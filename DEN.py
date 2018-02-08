@@ -281,8 +281,14 @@ class DEN(nn.Module):
         out_params = self.layers[-1].parameters()
         output_optimizer = t.optim.SGD(out_params, lr=0.01)
         # train it
-        for i in range(n_epochs):
-            self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[1]])
+        old_l = float('inf')
+        for e in range(n_epochs):
+            l = self.batch_pass(x_train, y_train, loss, output_optimizer, mu=mu, reg_list=[self.param_norm], args_reg=[[1]])
+            #Early stopping
+            if(old_l - l < 1e-3):
+                print("SR_last:", e,"epochs")
+                break
+            old_l = l
 #        print(self.sparsity())
         self.sparsify_thres()
 #        print(self.sparsity())
@@ -414,7 +420,7 @@ class DEN(nn.Module):
             print("loss:" + str(retrain_loss) + ",low enough, dynamic_expansion not required")
 
 
-    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=10, sigma=.2, lambd=.1): #sigma was .002
+    def duplicate(self, x_train, y_train, loss, optimizer, old_params_list, n_epochs=20, sigma=.2, lambd=10): #sigma was .002
         # Retrain network once again
         optimizer = t.optim.SGD(self.parameters(), lr=0.01)
 

@@ -313,7 +313,7 @@ if __name__ == '__main__':
             for e in range(epochs_nb):
                 #print('epoch '+str(e))
                 if model_type == "DEN":
-                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=.1, reg_list=[model.param_norm], args_reg=[[1]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, mu=.01, reg_list=[model.param_norm], args_reg=[[1]])
                     #Early stopping
                     if(old_l - l < 0):
                         print("First train:", e,"epochs")
