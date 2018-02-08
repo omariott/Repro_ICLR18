@@ -260,9 +260,9 @@ def plot_curves(data_lists,model_name,curve_type,x_axis='nb of epochs',save_plot
         else:
             plt.plot(range(1,len(values)+1), values,styles[i])
     if len(data_lists) == 2:
-        plt.legend([curve_names[0]+curve_type,curve_names[1]+curve_type], loc='upper right')
+        plt.legend([curve_names[0]+' '+curve_type,curve_names[1]+' '+curve_type], loc='upper right')
     else:#only train
-        plt.legend([curve_names[1]+curve_type], loc='upper right')
+        plt.legend([curve_names[0]+' '+curve_type], loc='upper right')
     plt.xlabel(x_axis)
     plt.ylabel(curve_type)
     if save_plot:
@@ -291,7 +291,7 @@ if __name__ == '__main__':
     learning_rate = 0.01
     batch_size = 32
     train_size = x_train.shape[0]
-    epochs_nb = 2
+    epochs_nb = 200
     cuda = False
     verbose = True
     input_dim = 784

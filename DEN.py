@@ -2,7 +2,7 @@ import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-import main_task_decomposition as helper
+import main as helper
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -69,25 +69,25 @@ class DEN(nn.Module):
 
 
     def sparsify_clip(self, old_params_list):
-    """
-    Sparsify network with gradient cliping technique
-    """
+        """
+        Sparsify network with gradient cliping technique
+        """
         for i, l in enumerate(self.parameters()):
             mask = (l*old_params_list[i]) > 0
             l.data *= mask.data.float()
 
     def sparsify_thres(self, tau=1e-2):
-    """
-    Sparsify network according to threshold tau
-    """
+        """
+        Sparsify network according to threshold tau
+        """
         for i, l in enumerate(self.parameters()):
             mask = l.data.abs() > tau
             l.data *= mask.float()
 
     def sparsify_n_remove(self, nb_add_neurons, layer_ind, layer_params_masks, tau):
-    """
-    Sparsify part of a layer (according to given mask) and remove neurons with null incoming connections
-    """
+        """
+        Sparsify part of a layer (according to given mask) and remove neurons with null incoming connections
+        """
         #step 1 sparsify layer (only new weights)
         l_params = list(self.layers[layer_ind].parameters()) #returns [connections,biases]
         for i,weights in enumerate(l_params):
@@ -131,9 +131,9 @@ class DEN(nn.Module):
         self.layers[layer_ind+1] = next_layer
 
     def sparsity(self):
-    """
-    Computes sparsity of network (proportion of zeroed parameters)
-    """
+        """
+        Computes sparsity of network (proportion of zeroed parameters)
+        """
         num = 0
         denom = 0
         for i, l in enumerate(self.parameters()):
@@ -146,9 +146,9 @@ class DEN(nn.Module):
 
 
     def add_task(self):
-    """
-    Adds a new output neuron to the network
-    """
+        """
+        Adds a new output neuron to the network
+        """
         # WARNING Probably kills cuda
         self.num_tasks += 1
         #register sizes for inference
@@ -160,10 +160,10 @@ class DEN(nn.Module):
 
 
     def add_neurons(self, l, n_neurons=1):
-    """
-    Adds n_neurons new neuros to layer l of the network
-    Used during dynamic expansion
-    """
+        """
+        Adds n_neurons new neuros to layer l of the network
+        Used during dynamic expansion
+        """
         # add neurons to layer number l
         if l > (self.depth - 1):
             print("Error, trying to add neuron to output layer. Please use 'add_task' method instead")
@@ -180,19 +180,19 @@ class DEN(nn.Module):
 
 
     def copy_neuron(self, layer_index, connections, bias):
-    """
-    creates a duplicate of a neuron
-    used during network duplication
-    """
+        """
+        creates a duplicate of a neuron
+        used during network duplication
+        """
         # add neuron and copy connection weights
         self.add_neurons(layer_index)
         self.layers[layer_index].weight[-1].data = connections.data
         self.layers[layer_index].bias[-1].data = bias.data
 
     def compute_hooks(self):
-    """
-    creates backwar hooks for training specific neurons
-    """
+        """
+        creates backwar hooks for training specific neurons
+        """
         current_layer = self.depth-1
         # mask of selected neurons for output layer, we only get the last one corresponding to the new tasks
         out_mask = t.zeros(self.num_tasks)
@@ -215,9 +215,9 @@ class DEN(nn.Module):
             current_layer -= 1
 
     def swap_neuron(self, layer, old_n, new_n):
-    """
-    swaps the positions of two neurons
-    """
+        """
+        swaps the positions of two neurons
+        """
         #incomming weights
         l = self.layers[layer]
         #save weights
@@ -238,17 +238,17 @@ class DEN(nn.Module):
 
 
     def register_hooks(self):
-    """
-    registers bacward hooks for next training session
-    """
+        """
+        registers bacward hooks for next training session
+        """
         for i, l in enumerate(self.layers):
             self.hook_handles.append(l.bias.register_hook(make_hook(self.b_hooks[i])))
             self.hook_handles.append(l.weight.register_hook(make_hook(self.w_hooks[i])))
 
     def unhook(self):
-    """
-    removes backward hooks
-    """
+        """
+        removes backward hooks
+        """
         for handle in self.hook_handles:
             handle.remove()
         self.hook_handles = []
@@ -322,8 +322,6 @@ class DEN(nn.Module):
         self.compute_hooks()
         self.register_hooks()
 
-
-
         # train subnetwork
         #init book-keeping
         train_losses = []
@@ -344,7 +342,7 @@ class DEN(nn.Module):
         self.unhook()
         return train_losses[-1]
 
-    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1): #tau was 0.02
+    def dynamic_expansion(self, x_train, y_train, loss, retrain_loss, tau=0.02, n_epochs=10, mu=0.1):
         nb_add_neuron = 10
         learning_rate = 0.01
         sparse_thr = 0.01
@@ -356,7 +354,6 @@ class DEN(nn.Module):
             for l in range(self.depth-1):
                 self.add_neurons(l,nb_add_neuron)
             #train newly added neurons
-
 
             #first register hook for each layer
             for i,l in enumerate(self.layers):
@@ -387,8 +384,6 @@ class DEN(nn.Module):
                 #register hook to bias variable
                 self.hook_handles.append(l.bias.register_hook(my_hook))
 
-
-
             #train added neurons with l1 norm for sparsity
             optimizer = t.optim.SGD(self.parameters(), lr=learning_rate)
             old_l = float('inf')
@@ -416,8 +411,6 @@ class DEN(nn.Module):
                     b_new_neurons_mask[:-nb_add_neuron] = 0
 
                 self.sparsify_n_remove(nb_add_neuron, i, [c_new_neurons_mask,b_new_neurons_mask], sparse_thr)
-
-
 
         else:
             print("loss:" + str(retrain_loss) + ",low enough, dynamic_expansion not required")
@@ -477,9 +470,9 @@ class DEN(nn.Module):
         """
 
     def create_eval_model(self, task_num):
-    """
-    creates truncated models according to timestamps for evaluation
-    """
+        """
+        creates truncated models according to timestamps for evaluation
+        """
         inference_sizes = self.sizes_hist[task_num]
         eval_model = DEN(inference_sizes, cuda=self.use_cuda)
         for i in range(task_num):
@@ -537,5 +530,5 @@ def make_hook(hook):
     create a hook to be registered
     """
     def hooker(grad):
-        return grad * Variable(hook, requires_grad=False)$
+        return grad * Variable(hook, requires_grad=False)
     return hooker
