@@ -14,8 +14,40 @@ from torch.autograd import Variable
 import _pickle as pickle
 import os.path
 import sklearn.metrics as metric
-
 import DEN as DEN_model
+
+
+class DNN_STL(nn.Module):
+    def __init__(self,sizes,mu=0.1,cuda=False):
+        self.models = [baseDNN([784,312,128],mu=mu,cuda=cuda) for i in range(10)]
+        self.num_tasks = 1
+
+
+    def add_task(self):
+        self.num_tasks += 1
+        #set new model according to the task it will work on
+        if self.num_tasks < 11: self.models[self.num_tasks-1].num_tasks = self.num_tasks
+
+    def batch_pass(self, x_train, y_train, loss, optim, mu=0.1,batch_size=32, reg_list=None, args_reg=None):
+        return self.models[self.num_tasks-1].batch_pass(x_train, y_train, loss, optim, mu, batch_size, reg_list, args_reg)
+
+    def forward(self, x):
+        return self.models[self.num_tasks-1].forward(x)
+
+    def parameters(self):
+        return self.models[self.num_tasks-1].parameters()
+
+    def create_eval_model(self, task_num):
+        return self.models[task_num]
+
+    def sparsity(self):
+        return 0.
+
+    def sparsify_thres(self, tau=0.01):
+        pass
+
+    def param_norm(self, p=2):
+        return self.models[self.num_tasks-1].param_norm(p)
 
 class baseDNN(nn.Module):
 
@@ -61,6 +93,11 @@ class baseDNN(nn.Module):
         return out
 
     def batch_pass(self, x_train, y_train, loss, optim, mu=0.1,batch_size=32, reg_list=None, args_reg=None):
+        set_size = x_train.shape[0]
+        split = 5/6
+        train_size = int(set_size * split)
+        val_size = set_size - train_size
+
         for i in range(train_size // batch_size):
             #load batch
             indsBatch = range(i * batch_size, (i+1) * batch_size)
@@ -82,6 +119,23 @@ class baseDNN(nn.Module):
             l += mu * r(*args_reg[i])
         l.backward()
         optim.step()
+
+        start_val = (i+1) * batch_size
+
+        l = 0
+        for i in range(val_size // batch_size):
+            #load batch
+            indsBatch = range(start_val + i * batch_size, start_val + (i+1) * batch_size)
+            x = Variable(x_train[indsBatch, :], requires_grad=False)
+            y = Variable(y_train[indsBatch], requires_grad=False)
+            if self.use_cuda: x,y = x.cuda(), y.cuda()
+
+            #forward
+            y_til = self.forward(x)[:,(self.num_tasks-1)]
+            #loss and backward
+            #print(F.sigmoid(y_til))
+            l += loss(F.sigmoid(y_til),y.float())/batch_size
+        return l.data[0]
 
     def sparsity(self):
         num = 0
@@ -157,7 +211,7 @@ def evaluation(model,loss,x_eval,y_eval,nb_class,use_cuda=False):
         if use_cuda:
             x,y = x.cuda(),y.cuda()
 
-        y_til = model(x)[:,(model.num_tasks-1)]
+        y_til = model.forward(x)[:,(model.num_tasks-1)]
         out = F.sigmoid(y_til)
         eval_loss = loss(out,y)
         outputs += [out]
@@ -262,11 +316,13 @@ if __name__ == '__main__':
     y_train = y_train[perm]
 
 
-    model_type = "DEN" # DEN | DNN | DNN-L2
+    model_type = "DEN" # DEN | DNN | DNN-L2 | DNN-STL
 
     #DNN model as presented in paper
     if model_type == "DEN":
         model = DEN_model.DEN([784,312,128],cuda=cuda)
+    elif model_type == "DNN-STL":
+        model = DNN_STL([784,312,128],mu=0.1,cuda=cuda)
     else: #DNN or DNN-L2
         model = baseDNN([784,312,128],mu=0.1,cuda=cuda)
 
@@ -321,9 +377,17 @@ if __name__ == '__main__':
                     old_l = l
                     model.sparsify_thres()
                 elif model_type == "DNN":
-                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
                 elif model_type == "DNN-L2":
-                    model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.drift], args_reg=[[old_params_list]])
+                elif model_type == "DNN-STL":
+                    l = model.batch_pass(x_train, task_y_train, loss, optimizer, reg_list=[model.param_norm], args_reg=[[2]])
+
+                #Early stopping
+                if(old_l - l < 0):
+                    print("First train:", e,"epochs")
+                    break
+                old_l = l
 
                 test_l,_,test_acc = evaluation(model, loss, x_test, task_y_test, 2, use_cuda=cuda)
                 train_l,_,train_acc = evaluation(model, loss, x_train, task_y_train, 2, use_cuda=cuda)
@@ -366,12 +430,15 @@ if __name__ == '__main__':
         print("train_auroc: " + str(train_auroc))
         print("test_auroc: " + str(test_auroc))
         print("train_acc: " +  str(train_acc))
-        print(model)
+        if model_type == "DEN": print(model)
         print("\n##################################\n")
 
         model.add_task()
         accs_test,aurocs_test = overall_offline_evaluation(model, loss, x_test, y_test, use_cuda=cuda)
         test_average_aurocs_task.append(np.mean(aurocs_test))
+
+    #save paper results
+    pickle.dump(test_average_aurocs_task, open(str(model_type)+'_paper_eval_data.p', 'wb'))
 
 
     plot_curves([train_aurocs,test_aurocs],'DEN','auroc',x_axis='nb of tasks', filename="online_auroc",styles=['--rv','--bs'])
